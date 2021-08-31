@@ -40,6 +40,7 @@ Inductive justif :=
 Inductive stmt :=
 | Assert(t: term)(j: option justif)
 | Assign(x: var)(t: term)
+| If(t: term)(s1 s2: stmt)
 | While(t: term)(s: stmt)
 | Seq(s1 s2: stmt)
 | Pass
