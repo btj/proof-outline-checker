@@ -30,7 +30,7 @@ Fixpoint poly_add_term(z: Z)(t: term)(p: poly): poly :=
   | (z0, t0)::p =>
     if term_eq_dec t t0 then
       let z1 := (z + z0)%Z in
-      if Z.eqb z1 0 then
+      if Z.eq_dec z1 0 then
         p
       else
         (z1, t0)::p
@@ -41,7 +41,7 @@ Fixpoint poly_add_term(z: Z)(t: term)(p: poly): poly :=
 Fixpoint poly_add(p1 p2: poly): poly :=
   match p1 with
     [] => p2
-  | (z1, t1)::p1 => poly_add p1 (poly_add_term z1 t1 p2)
+  | (z1, t1)::p1 => poly_add_term z1 t1 (poly_add p1 p2)
   end.
 
 Definition poly_scale(z: Z)(p: poly): poly :=
@@ -59,7 +59,7 @@ Fixpoint poly_lookup(t: term)(p: poly): option Z :=
 
 Fixpoint poly_of(t: term): poly :=
   match t with
-    Val z => if Z.eqb z 0 then [] else [(z, Val 1)]
+    Val z => if Z.eq_dec z 0 then [] else [(z, Val 1)]
   | BinOp proof_outlines.Add t1 t2 => poly_add (poly_of t1) (poly_of t2)
   | BinOp Sub t1 t2 => poly_subtract (poly_of t1) (poly_of t2)
   | t => [(1%Z, t)]

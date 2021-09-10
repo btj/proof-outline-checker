@@ -30,9 +30,13 @@ Inductive evaluates_to(S: state): term -> value -> Prop :=
   evaluates_to S t2 v2 ->
   v1 <> v2 ->
   evaluates_to S (BinOp Eq t1 t2) (VBool false)
+| And_evaluates_to t1 b1 t2 b2:
+  evaluates_to S t1 (VBool b1) ->
+  evaluates_to S t2 (VBool b2) ->
+  evaluates_to S (BinOp And t1 t2) (VBool (b1 && b2))
 | Not_evaluates_to t b:
   evaluates_to S t (VBool b) ->
-  evaluates_to S (Not t) (VBool (if b then false else true))
+  evaluates_to S (Not t) (VBool (negb b))
 .
 
 Definition update(x: var)(z: Z)(S: state): state :=
