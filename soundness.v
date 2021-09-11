@@ -324,7 +324,7 @@ Proof.
     destruct t0; discriminate.
 Qed.
 
-Lemma Z_tautology_checker_soundness C:
+Lemma is_Z_tautology_soundness C:
   type_of C = Some TBool ->
   is_Z_tautology C = true ->
   value_of C = VBool true.
@@ -670,15 +670,54 @@ Proof.
         simpl; congruence.
 Qed.
 
-Lemma conjunct_entailment_checker_soundness E Hs C j:
-  Forall (fun H => type_of E H = Some TBool) Hs ->
-  type_of E C = Some TBool ->
+Lemma is_valid_conjunct_entailment_soundness Hs C j:
+  Forall (fun H => type_of H = Some TBool) Hs ->
+  type_of C = Some TBool ->
   is_valid_conjunct_entailment Hs C j = true ->
-  forall S,
-  Forall (fun x => S x <> None) E ->
-  Forall (fun H => evaluates_to S H (VBool true)) Hs ->
-  evaluates_to S C (VBool true).
+  Forall (fun H => value_of H = VBool true) Hs ->
+  value_of C = VBool true.
 Proof.
+  intros.
+  unfold is_valid_conjunct_entailment in H1.
+  destruct (in_dec term_eq_dec C Hs). {
+    apply (proj1 (Forall_forall _ _)) with (2:=i) in H2.
+    assumption.
+  }
+  destruct j as [|k|k1 k2].
+  - apply is_Z_tautology_soundness with (1:=H0) (2:=H1).
+  - case_eq (nth_error Hs k); intros; rewrite H3 in H1; try discriminate.
+    apply nth_error_In in H3.
+    apply (proj1 (Forall_forall _ _)) with (2:=H3) in H.
+    apply (proj1 (Forall_forall _ _)) with (2:=H3) in H2.
+    apply is_Z_entailment_soundness with (2:=H0) (3:=H1); assumption.
+  - case_eq (nth_error Hs k1); intros; rewrite H3 in H1; try discriminate.
+    destruct t; try discriminate.
+    destruct op; try discriminate.
+    case_eq (nth_error Hs k2); intros; rewrite H4 in H1; try discriminate.
+    destruct (in_dec term_eq_dec C (rewrites t1 t2 t)); try discriminate.
+    lapply (rewrites_soundness t1 t2 t). 2:{
+      apply nth_error_In in H3.
+      apply (proj1 (Forall_forall _ _)) with (2:=H3) in H2.
+      simpl in H2.
+      case_eq (int_of_value (value_of t1) =? int_of_value (value_of t2))%Z; intros; rewrite H5 in H2; try discriminate.
+      apply Z.eqb_eq in H5.
+      apply (proj1 (Forall_forall _ _)) with (2:=H3) in H.
+      simpl in H.
+      case_eq (type_of t1); intros; rewrite H6 in H; try discriminate.
+      destruct t0; try discriminate.
+      case_eq (type_of t2); intros; rewrite H7 in H; try discriminate.
+      destruct t0; try discriminate.
+      assert (VInt (int_of_value (value_of t1)) = VInt (int_of_value (value_of t2))). congruence.
+      rewrite VInt_int_of_value_of with (1:=H6) in H8.
+      rewrite VInt_int_of_value_of with (1:=H7) in H8.
+      assumption.
+    }
+    intros.
+    apply (proj1 (Forall_forall _ _)) with (2:=i) in H5.
+    apply nth_error_In in H4.
+    apply (proj1 (Forall_forall _ _)) with (2:=H4) in H2.
+    congruence.
+Qed.
 
 Lemma entailment_checker_soundness E P P' j:
   type_of E P = Some TBool ->
