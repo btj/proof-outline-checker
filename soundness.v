@@ -571,6 +571,105 @@ Proof.
   apply is_Z_entailment1_soundness.
 Qed.
 
+Fixpoint term_size(t: term): nat :=
+  match t with
+  | BinOp op t1 t2 => term_size t1 + term_size t2 + 1
+  | Not t => term_size t + 1
+  | _ => 0
+  end.
+
+Lemma rewrites_unfold lhs rhs t:
+  rewrites lhs rhs t =
+  if term_eq_dec t lhs then
+    [rhs; t]
+  else if term_eq_dec t rhs then
+    [lhs; t]
+  else
+    match t with
+      BinOp op t1 t2 =>
+      flat_map (fun t1' =>
+        map (fun t2' => BinOp op t1' t2') (rewrites lhs rhs t2)
+      ) (rewrites lhs rhs t1)
+    | Not t => map (fun t' => Not t') (rewrites lhs rhs t)
+    | t => [t]
+    end.
+Proof.
+  destruct t; reflexivity.
+Qed.
+
+
+Lemma Forall_flat_map{A B} (P: A -> Prop) (f: B -> list A) (xs: list B):
+  Forall (fun y => Forall P (f y)) xs ->
+  Forall P (flat_map f xs).
+Proof.
+  induction 1.
+  - constructor.
+  - simpl.
+    apply Forall_app.
+    tauto.
+Qed.
+
+Lemma rewrites_soundness lhs rhs t:
+  value_of lhs = value_of rhs ->
+  Forall (fun t' => value_of t' = value_of t) (rewrites lhs rhs t).
+Proof.
+  intro.
+  apply Wf_nat.induction_ltof1 with (f:=term_size) (a:=t).
+  clear t; intros t IH.
+  rewrite rewrites_unfold.
+  destruct (term_eq_dec t lhs).
+  - subst.
+    constructor.
+    + congruence.
+    + constructor.
+      * reflexivity.
+      * constructor.
+  - destruct (term_eq_dec t rhs).
+    + subst.
+      constructor.
+      * congruence.
+      * constructor.
+        -- reflexivity.
+        -- constructor.
+    + destruct t; try (constructor; trivial).
+      * apply Forall_flat_map.
+        apply Forall_forall.
+        intros t1' ?.
+        apply Forall_forall.
+        intros t' ?.
+        apply in_map_iff in H1.
+        destruct H1 as [t2' [? ?]].
+        subst.
+        lapply (IH t1). 2:{
+          unfold ltof.
+          simpl.
+          lia.
+        }
+        intros.
+        apply (proj1 (Forall_forall _ _)) with (2:=H0) in H1.
+        lapply (IH t2). 2:{
+          unfold ltof.
+          simpl.
+          lia.
+        }
+        intros.
+        apply (proj1 (Forall_forall _ _)) with (2:=H2) in H3.
+        destruct op; simpl; congruence.
+      * apply Forall_forall.
+        intros t0 ?.
+        apply in_map_iff in H0.
+        destruct H0 as [t' [? ?]].
+        subst.
+        lapply (IH t). 2:{
+          unfold ltof.
+          simpl.
+          lia.
+        }
+        intros.
+        apply (proj1 (Forall_forall _ _)) with (2:=H1) in H0.
+        simpl; congruence.
+Qed.
+
 Lemma conjunct_entailment_checker_soundness E Hs C j:
   Forall (fun H => type_of E H = Some TBool) Hs ->
   type_of E C = Some TBool ->
