@@ -84,7 +84,7 @@ Proof.
   reflexivity.
 Qed.
 
-Fixpoint is_Z_entailment(H C: term): bool :=
+Definition is_Z_entailment0(H C: term): bool :=
   match C with
     BinOp Eq t1 t2 =>
     let pC := poly_subtract (poly_of t1) (poly_of t2) in
@@ -102,12 +102,19 @@ Fixpoint is_Z_entailment(H C: term): bool :=
           | _ => false
           end
         end
-      | Not (Not H) => is_Z_entailment H C
       | _ => false
       end
     end
   | _ => false
   end.
+
+Fixpoint is_Z_entailment1(H_negated: bool)(H C: term): bool :=
+  match H with
+  | Not H => is_Z_entailment1 (negb H_negated) H C
+  | _ => if H_negated then false else is_Z_entailment0 H C
+  end.
+
+Definition is_Z_entailment(H C: term): bool := is_Z_entailment1 false H C.
 
 Goal is_Z_entailment
   (BinOp Eq (Var "r") (BinOp Sub (Var "n") (Var "i")))

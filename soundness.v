@@ -349,6 +349,228 @@ Proof.
   lia.
 Qed.
 
+Definition poly_is_wellformed(p: list (Z * term)): Prop :=
+  Forall (fun zt => fst zt <> 0%Z) p.
+
+Lemma poly_scale_is_wellformed(z: Z)(p: list (Z * term)):
+  z <> 0%Z ->
+  poly_is_wellformed p ->
+  poly_is_wellformed (poly_scale z p).
+Proof.
+  intros Hz Hp.
+  apply Forall_forall.
+  intros [z0 t0] Hz0t0.
+  apply in_map_iff in Hz0t0.
+  destruct Hz0t0 as [[z1 t1] [? ?]].
+  injection H; clear H; intros; subst.
+  simpl.
+  apply (proj1 (Forall_forall _ _)) with (2:=H0) in Hp.
+  intro.
+  apply Z.mul_eq_0_r with (2:=Hz) in H.
+  simpl in Hp.
+  congruence.
+Qed.
+
+Lemma poly_add_term_is_wellformed z t p:
+  z <> 0%Z ->
+  poly_is_wellformed p ->
+  poly_is_wellformed (poly_add_term z t p).
+Proof.
+  intro Hz.
+  induction p.
+  - intros.
+    constructor.
+    + assumption.
+    + constructor.
+  - intros.
+    destruct a as [z0 t0].
+    inversion H; clear H; subst.
+    simpl in H2.
+    simpl.
+    destruct (term_eq_dec t t0).
+    + subst.
+      destruct (Z.eq_dec (z + z0) 0).
+      * assumption.
+      * constructor; assumption.
+    + constructor.
+      * assumption.
+      * apply IHp.
+        assumption.
+Qed.
+
+Lemma poly_add_is_wellformed p1 p2:
+  poly_is_wellformed p1 ->
+  poly_is_wellformed p2 ->
+  poly_is_wellformed (poly_add p1 p2).
+Proof.
+  intros. revert p1 H.
+  induction p1.
+  - intros.
+    assumption.
+  - intros.
+    destruct a as [z t].
+    inversion H; clear H; subst.
+    simpl in H3.
+    simpl.
+    apply poly_add_term_is_wellformed with (1:=H3).
+    apply IHp1.
+    assumption.
+Qed.
+
+Lemma poly_subtract_is_wellformed p1 p2:
+  poly_is_wellformed p1 ->
+  poly_is_wellformed p2 ->
+  poly_is_wellformed (poly_subtract p1 p2).
+Proof.
+  intros.
+  unfold poly_subtract.
+  apply poly_add_is_wellformed; try assumption.
+  apply poly_scale_is_wellformed; try lia.
+  assumption.
+Qed.
+
+Lemma poly_of_is_wellformed t:
+  poly_is_wellformed (poly_of t).
+Proof.
+  induction t; simpl.
+  - destruct (Z.eq_dec z 0).
+    + constructor.
+    + constructor.
+      * assumption.
+      * constructor.
+  - constructor.
+    + simpl; lia.
+    + constructor.
+  - destruct op.
+    + apply poly_add_is_wellformed; assumption.
+    + apply poly_subtract_is_wellformed; assumption.
+    + constructor.
+      * simpl; lia.
+      * constructor.
+    + constructor.
+      * simpl; lia.
+      * constructor.
+  - constructor.
+    + simpl; lia.
+    + constructor.
+Qed.
+
+Lemma poly_lookup_nonzero t p z:
+  poly_is_wellformed p ->
+  poly_lookup t p = Some z ->
+  z <> 0%Z.
+Proof.
+  induction p.
+  - simpl; intros; discriminate.
+  - destruct a as [z0 t0].
+    intros.
+    inversion H; clear H; subst.
+    simpl in H3.
+    simpl in H0.
+    destruct (term_eq_dec t t0).
+    + subst.
+      congruence.
+    + apply IHp; assumption.
+Qed.
+
+Lemma is_Z_entailment0_soundness H C:
+  type_of H = Some TBool ->
+  type_of C = Some TBool ->
+  is_Z_entailment0 H C = true ->
+  value_of H = VBool true ->
+  value_of C = VBool true.
+Proof.
+  intros.
+  unfold is_Z_entailment0 in H2.
+  destruct C; try discriminate.
+  destruct op; try discriminate.
+  simpl.
+  case_eq (int_of_value (value_of C1) =? int_of_value (value_of C2))%Z; intros; try reflexivity.
+  apply Z.eqb_neq in H4.
+  simpl in H1.
+  case_eq (type_of C1); intros; rewrite H5 in H1; try discriminate.
+  destruct t; try discriminate.
+  case_eq (type_of C2); intros; rewrite H6 in H1; try discriminate.
+  destruct t; try discriminate.
+  pose proof (value_of_poly_subtract (poly_of C1) (poly_of C2)).
+  case_eq (poly_subtract (poly_of C1) (poly_of C2)); [intros H8|intros [z0 t0] pC H8]; rewrite H8 in H2; rewrite H8 in H7. {
+    simpl in H7.
+    rewrite value_of_poly_of with (1:=H5) in H7.
+    rewrite value_of_poly_of with (1:=H6) in H7.
+    lia.
+  }
+  destruct H; try discriminate.
+  rename H into tH1.
+  rename H9 into tH2.
+  destruct op; try discriminate.
+  case_eq (poly_lookup t0 (poly_subtract (poly_of tH1) (poly_of tH2))); intros; rewrite H in H2; try discriminate.
+  case_eq (poly_subtract (poly_scale z ((z0, t0)::pC)) (poly_scale z0 (poly_subtract (poly_of tH1) (poly_of tH2)))); intros; rewrite H9 in H2; try discriminate.
+  elim H4; clear H4.
+  simpl in H3.
+  injection H3; clear H3; intros.
+  apply Z.eqb_eq in H3.
+  assert (forall p1 p2, p1 = p2 -> value_of_poly p1 = value_of_poly p2). intros; congruence.
+  apply H4 in H9.
+  rewrite <- H8 in H9.
+  simpl in H9.
+  rewrite value_of_poly_subtract in H9.
+  rewrite !value_of_poly_scale in H9.
+  rewrite !value_of_poly_subtract in H9.
+  simpl in H0.
+  case_eq (type_of tH1); intros; rewrite H10 in H0; try discriminate.
+  destruct t; try discriminate.
+  case_eq (type_of tH2); intros; rewrite H11 in H0; try discriminate.
+  destruct t; try discriminate.
+  rewrite !value_of_poly_of in H9; try assumption.
+  assert (int_of_value (value_of tH1) - int_of_value (value_of tH2) = 0)%Z. lia.
+  rewrite H12 in H9.
+  rewrite Z.mul_0_r in H9.
+  apply poly_lookup_nonzero in H.
+  rewrite Z.sub_0_r in H9.
+  apply Z.mul_eq_0_r with (2:=H) in H9. {
+    lia.
+  }
+  apply poly_subtract_is_wellformed; apply poly_of_is_wellformed.
+Qed.
+
+Lemma is_Z_entailment1_soundness H_negated H C:
+  type_of H = Some TBool ->
+  type_of C = Some TBool ->
+  is_Z_entailment1 H_negated H C = true ->
+  value_of H = VBool (negb H_negated) ->
+  value_of C = VBool true.
+Proof.
+  revert H_negated.
+  induction H; simpl.
+  - destruct H_negated; try (intros; discriminate).
+  - destruct (S x); intros; discriminate.
+  - destruct H_negated; try (intros; discriminate); apply is_Z_entailment0_soundness with (H:=BinOp op H H0).
+  - intros; apply IHterm with (H_negated := negb H_negated); try assumption.
+    + destruct (type_of H); try discriminate.
+      destruct t; congruence.
+    + rewrite Bool.negb_involutive.
+      injection H3; clear H3; intros.
+      assert (bool_of_value (value_of H) = H_negated). {
+        destruct (bool_of_value (value_of H)); destruct H_negated; simpl in H3; congruence.
+      }
+      rewrite <- H4.
+      rewrite VBool_bool_of_value_of. reflexivity.
+      destruct (type_of H); try discriminate.
+      destruct t; try discriminate.
+      reflexivity.
+Qed.
+
+Lemma is_Z_entailment_soundness H C:
+  type_of H = Some TBool ->
+  type_of C = Some TBool ->
+  is_Z_entailment H C = true ->
+  value_of H = VBool true ->
+  value_of C = VBool true.
+Proof.
+  unfold is_Z_entailment.
+  apply is_Z_entailment1_soundness.
+Qed.
+
 Lemma conjunct_entailment_checker_soundness E Hs C j:
   Forall (fun H => type_of E H = Some TBool) Hs ->
   type_of E C = Some TBool ->
