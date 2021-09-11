@@ -1,9 +1,11 @@
 Require Import Lia.
 Require Export semantics proof_checker.
 
-Inductive is_safe(S: state)(s: stmt): Prop :=
+(* This definition makes sense only if the semantics is deterministic. *)
+Inductive is_safe(S: state)(s: stmt)(Q: state -> Prop): Prop :=
 | terminates_is_safe S':
   terminates_in S s S' ->
+  Q S' ->
   is_safe S s
 | diverges_is_safe:
   diverges S s ->
@@ -810,32 +812,7 @@ Proof.
   - apply conjuncts_of_soundness; assumption.
 Qed.
 
-Inductive poly_evaluates_to(S: state): list (Z * term) -> Z -> Prop :=
-| empty_poly_evaluates_to:
-  poly_evaluates_to S [] 0
-| nonempty_poly_evaluates_to z t vt p vp:
-  evaluates_to S t (VInt vt) ->
-  poly_evaluates_to S p vp ->
-  poly_evaluates_to S ((z, t)::p) (z * vt + vp)
-.
-
-Lemma poly_scale_soundness S p vp z:
-  poly_evaluates_to S p vp ->
-  poly_evaluates_to S (poly_scale z p) (z * vp).
-Proof.
-  revert p vp.
-  induction p; intros.
-  - inversion H; clear H; subst.
-    rewrite Z.mul_0_r.
-    constructor.
-  - inversion H; clear H; subst.
-    simpl.
-    rewrite Z.mul_add_distr_l.
-    rewrite Z.mul_assoc.
-    constructor; auto.
-Qed.
-
-Lemma evaluates_to_unique S t v1:
+Lemma evaluates_to_unique t v1:
   evaluates_to S t v1 ->
   forall v2,
   evaluates_to S t v2 ->
@@ -865,137 +842,20 @@ Proof.
       apply IHevaluates_to2 in H7.
       congruence.
     + reflexivity.
+  - inversion H1; clear H1; subst.
+    apply IHevaluates_to1 in H4.
+    apply IHevaluates_to2 in H6.
+    congruence.
   - inversion H0; clear H0; subst.
     apply IHevaluates_to in H2.
     injection H2; clear H2; intros; subst.
     reflexivity.
 Qed.
 
-Lemma poly_add_term_soundness S z t vt p vp:
-  evaluates_to S t (VInt vt) ->
-  poly_evaluates_to S p vp ->
-  poly_evaluates_to S (poly_add_term z t p) (z * vt + vp).
-Proof.
-  revert p vp.
-  induction p; intros.
-  - inversion H0; clear H0; subst.
-    simpl.
-    constructor; auto.
-    constructor.
-  - inversion H0; clear H0; subst.
-    simpl.
-    destruct (term_eq_dec t t0).
-    + subst.
-      apply evaluates_to_unique with (1:=H) in H3.
-      injection H3; clear H3; intros; subst.
-      destruct (Z.eq_dec (z + z0) 0).
-      * rewrite Z.add_assoc.
-        rewrite <- Z.mul_add_distr_r.
-        rewrite e.
-        rewrite Z.mul_0_l.
-        rewrite Z.add_0_l.
-        assumption.
-      * rewrite Z.add_assoc.
-        rewrite <- Z.mul_add_distr_r.
-        constructor; assumption.
-    + rewrite Z.add_assoc.
-      rewrite Z.add_comm with (n:=(z * vt)%Z).
-      rewrite <- Z.add_assoc.
-      constructor; auto.
-Qed.
+End State.
 
-Lemma poly_add_soundness S p1 z1 p2 z2:
-  poly_evaluates_to S p1 z1 ->
-  poly_evaluates_to S p2 z2 ->
-  poly_evaluates_to S (poly_add p1 p2) (z1 + z2).
-Proof.
-  intros.
-  induction H.
-  - simpl.
-    tauto.
-  - simpl.
-    rewrite <- Z.add_assoc.
-    apply poly_add_term_soundness; assumption.
-Qed.
+End TypeChecking.
 
-Lemma poly_subtract_soundness S p1 z1 p2 z2:
-  poly_evaluates_to S p1 z1 ->
-  poly_evaluates_to S p2 z2 ->
-  poly_evaluates_to S (poly_subtract p1 p2) (z1 - z2).
-Proof.
-  intros.
-  unfold poly_subtract.
-  assert (z1 - z2 = z1 + (-1) * z2)%Z. lia. rewrite H1. clear H1.
-  apply poly_add_soundness; try assumption.
-  apply poly_scale_soundness.
-  assumption.
-Qed.
-
-Lemma poly_of_soundness E t:
-  type_of E t = Some TInt ->
-  forall S,
-  Forall (fun x => S x <> None) E ->
-  exists z,
-  poly_evaluates_to S (poly_of t) z /\
-  evaluates_to S t (VInt z).
-Proof.
-  intros.
-  revert H.
-  induction t; simpl; intros.
-  - exists z. split.
-    + destruct (Z.eq_dec z 0).
-      * subst. constructor.
-      * assert (z = z * 1 + 0)%Z. lia. rewrite H1 at 2. clear H1.
-        constructor.
-        -- constructor.
-        -- constructor.
-    + constructor.
-  - destruct (in_dec string_dec x E). 2:{ discriminate. }
-    clear H.
-    apply (proj1 (Forall_forall _ _)) with (2:=i) in H0.
-    case_eq (S x); intros; try tauto.
-    exists z.
-    assert (evaluates_to S (Var x) (VInt z)). constructor; assumption.
-    split; [|assumption].
-    assert (z = 1 * z + 0)%Z. lia. rewrite H2. clear H2.
-    constructor; try assumption.
-    constructor.
-  - destruct op.
-    + (* Add *)
-      case_eq (type_of E t1); intros; rewrite H1 in H.
-      destruct t; try discriminate.
-      case_eq (type_of E t2); intros; rewrite H2 in H.
-      destruct t; try discriminate.
-      
-
-Lemma Z_tautology_checker_soundness E C:
-  type_of E C = Some TBool ->
-  is_Z_tautology C = true ->
-  forall S,
-  Forall (fun x => S x <> None) E ->
-  evaluates_to S C (VBool true).
-Proof.
-  
-Lemma conjunct_entailment_checker_soundness E Hs C j:
-  Forall (fun H => type_of E H = Some TBool) Hs ->
-  type_of E C = Some TBool ->
-  is_valid_conjunct_entailment Hs C j = true ->
-  forall S,
-  Forall (fun x => S x <> None) E ->
-  Forall (fun H => evaluates_to S H (VBool true)) Hs ->
-  evaluates_to S C (VBool true).
-Proof.
-
-Lemma entailment_checker_soundness E P P' j:
-  type_of E P = Some TBool ->
-  type_of E P' = Some TBool ->
-  is_valid_entailment P P' j = true ->
-  forall S,
-  Forall (fun x => S x <> None) E ->
-  evaluates_to S P (VBool true) ->
-  evaluates_to S P' (VBool true).
-Proof.
-  
 Fixpoint stmt_is_well_typed(E: env)(s: stmt): option env :=
   match s with
     Assert P j =>
@@ -1039,28 +899,28 @@ Fixpoint stmt_is_well_typed(E: env)(s: stmt): option env :=
     end
   end.
 
-
 Lemma soundness_lemma:
-  forall E P j s,
+  forall E P j s Q,
   stmt_is_well_typed E (Assert P j ;; s) <> None ->
   is_valid_proof_outline (Assert P j ;; s) = true ->
+  ends_with_assert s Q = true ->
   forall S,
   Forall (fun x => S x <> None) E ->
   evaluates_to S P (VBool true) ->
-  (forall S', ~ terminates_in S s S') ->
+  (forall S', evaluates_to S' Q (VBool true) -> ~ terminates_in S s S') ->
   diverges S s.
 Proof.
   cofix Hcofix.
   intros.
   destruct s; simpl in H0; try discriminate.
-  - destruct s1; simpl in H0.
-    + apply Seq_diverges2 with (S':=S).
-      * constructor.
+  destruct s1; simpl in H0; try discriminate.
+  - 
 
-Theorem soundness E P j s:
+Theorem soundness E P j s Q:
   stmt_is_well_typed E (Assert P j ;; s) <> None ->
   is_valid_proof_outline (Assert P j ;; s) = true ->
+  ends_with_assert s Q = true ->
   forall S,
   Forall (fun x => S x <> None) E ->
   evaluates_to S P (VBool true) ->
-  is_safe S s.
+  is_safe S s (fun S' => evaluates_to S Q (VBool true)).
