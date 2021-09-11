@@ -719,15 +719,96 @@ Proof.
     congruence.
 Qed.
 
-Lemma entailment_checker_soundness E P P' j:
-  type_of E P = Some TBool ->
-  type_of E P' = Some TBool ->
-  is_valid_entailment P P' j = true ->
-  forall S,
-  Forall (fun x => S x <> None) E ->
-  evaluates_to S P (VBool true) ->
-  evaluates_to S P' (VBool true).
+Lemma Forall_nil_iff{A}(P: A -> Prop):
+  Forall P [] <-> True.
 Proof.
+  split; intros.
+  - constructor.
+  - constructor.
+Qed.
+
+Lemma Forall_cons_iff{A}(P: A -> Prop)(x: A)(xs: list A):
+  Forall P (x::xs) <-> P x /\ Forall P xs.
+Proof.
+  split; intros.
+  - inversion H; auto.
+  - constructor; tauto.
+Qed.
+
+Lemma type_of_conjuncts_of P:
+  type_of P = Some TBool ->
+  Forall (fun P => type_of P = Some TBool) (conjuncts_of P).
+Proof.
+  induction P; simpl; intros; try discriminate.
+  - destruct (in_dec string_dec x E); discriminate.
+  - destruct op; try discriminate.
+    + destruct (type_of P1); try discriminate.
+      destruct t; try discriminate.
+      destruct (type_of P2); try discriminate.
+      destruct t; discriminate.
+    + destruct (type_of P1); try discriminate.
+      destruct t; try discriminate.
+      destruct (type_of P2); try discriminate.
+      destruct t; discriminate.
+    + constructor; trivial.
+    + case_eq (type_of P1); intros; rewrite H0 in H; try discriminate.
+      destruct t; try discriminate.
+      case_eq (type_of P2); intros; rewrite H1 in H; try discriminate.
+      destruct t; try discriminate.
+      apply Forall_app.
+      auto.
+  - constructor; trivial.
+Qed.
+
+Lemma conjuncts_of_soundness P:
+  type_of P = Some TBool ->
+  value_of P = VBool true <-> Forall (fun C => value_of C = VBool true) (conjuncts_of P).
+Proof.
+  induction P; try destruct op; try (simpl; rewrite Forall_cons_iff; rewrite Forall_nil_iff; tauto).
+  simpl.
+  rewrite Forall_app.
+  intros.
+  case_eq (type_of P1); intros; rewrite H0 in H; try discriminate.
+  destruct t; try discriminate.
+  case_eq (type_of P2); intros; rewrite H1 in H; try discriminate.
+  destruct t; try discriminate.
+  assert (forall b1 b2, VBool b1 = VBool b2 <-> b1 = b2). {
+    split; congruence.
+  }
+  rewrite H2.
+  assert (forall b1 b2, b1 && b2 = true <-> b1 = true /\ b2 = true)%bool. {
+    destruct b1; destruct b2; simpl; tauto.
+  }
+  rewrite H3.
+  rewrite <- !H2.
+  rewrite !VBool_bool_of_value_of; try assumption.
+  rewrite IHP1; try assumption.
+  rewrite IHP2; try assumption.
+  reflexivity.
+Qed.
+
+Lemma is_valid_entailment_soundness P P' j:
+  type_of P = Some TBool ->
+  type_of P' = Some TBool ->
+  is_valid_entailment P P' j = true ->
+  value_of P = VBool true ->
+  value_of P' = VBool true.
+Proof.
+  intros.
+  unfold is_valid_entailment in H1.
+  rewrite forallb_forall in H1.
+  apply conjuncts_of_soundness; try assumption.
+  apply Forall_forall.
+  intros.
+  pose proof H3.
+  apply H1 in H3.
+  apply is_valid_conjunct_entailment_soundness with (3:=H3).
+  - apply type_of_conjuncts_of. assumption.
+  - apply type_of_conjuncts_of in H0.
+    rewrite Forall_forall in H0.
+    apply H0 with (1:=H4).
+  - apply conjuncts_of_soundness; assumption.
+Qed.
 
 Inductive poly_evaluates_to(S: state): list (Z * term) -> Z -> Prop :=
 | empty_poly_evaluates_to:
