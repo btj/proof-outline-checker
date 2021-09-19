@@ -1,4 +1,14 @@
+*.swp
+
 *.cache
 *.aux
 *.glob
 *.vo*
+
+proof_checker.ml
+proof_checker.mli
+
+*.cm*
+*.byte
+
+proof_checker.js
