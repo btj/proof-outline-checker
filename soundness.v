@@ -901,7 +901,10 @@ Lemma soundness_lemma:
   forall S,
   Forall (fun x => S x <> None) E ->
   evaluates_to S P (VBool true) ->
-  (forall S', Forall (fun x => S' x <> None) E' -> evaluates_to S' Q (VBool true) -> ~ terminates_in S s S') ->
+  (forall S',
+   Forall (fun x => S' x <> None) E' ->
+   evaluates_to S' Q (VBool true) ->
+   ~ terminates_in S s S') ->
   diverges S s.
 Proof.
   intros E P j s E'.
@@ -1148,14 +1151,37 @@ Proof.
       * intros.
         intro.
         elim H4.
-        exist
+        exists S'; tauto.
+  - (* Pass *)
+    injection Hwelltyped; clear Hwelltyped; intros; subst.
+    unfold term_eqb in Hendswith.
+    destruct (term_eq_dec P Q); try congruence; subst.
+    elim (Hterm S HSE HP).
+    constructor.
+Qed.
 
-    
 Theorem soundness E P j s Q:
   post_env_of_stmt E (Assert P j ;; s) <> None ->
   is_valid_proof_outline (Assert P j ;; s) = true ->
-  ends_with_assert s Q = true ->
+  ends_with_assert (Assert P j ;; s) Q = true ->
   forall S,
   Forall (fun x => S x <> None) E ->
   evaluates_to S P (VBool true) ->
-  is_safe S s (fun S' => evaluates_to S Q (VBool true)).
+  is_safe S s (fun S' => evaluates_to S' Q (VBool true)).
+Proof.
+  intros.
+  case_eq (post_env_of_stmt E (Assert P j ;; s)); intros; rewrite H4 in H; try congruence.
+  rename e into E'.
+  destruct (classic (exists S',
+   Forall (fun x => S' x <> None) E' /\
+   evaluates_to S' Q (VBool true) /\
+   terminates_in S s S')).
+  - destruct H5 as [S' [? [??]]].
+    apply terminates_is_safe with (S':=S'); assumption.
+  - apply diverges_is_safe.
+    eapply soundness_lemma; try eassumption.
+    intros.
+    intro.
+    elim H5.
+    exists S'. tauto.
+Qed.
