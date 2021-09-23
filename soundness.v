@@ -817,27 +817,340 @@ Proof.
     reflexivity.
 Qed.
 
+Lemma subst_soundness x tx t v:
+  type_of tx = Some TInt ->
+  evaluates_to S (subst x tx t) v ->
+  evaluates_to (update x (int_of_value (value_of tx)) S) t v.
+Proof.
+  intro Htx.
+  revert v.
+  induction t; simpl; intros.
+  - inversion H; clear H; subst.
+    constructor.
+  - destruct (string_dec x x0).
+    + subst.
+      assert (v = value_of tx). {
+        apply evaluates_to_unique with (1:=H).
+        apply value_of_soundness.
+        congruence.
+      }
+      subst.
+      rewrite <- VInt_int_of_value_of with (1:=Htx).
+      constructor.
+      simpl.
+      unfold update.
+      destruct (string_dec x0 x0); try congruence.
+    + inversion H; clear H; subst.
+      constructor.
+      unfold update.
+      destruct (string_dec x x0); try congruence.
+  - inversion H; clear H; subst; try (constructor; auto).
+    + eapply Eq_evaluates_to_true; eauto.
+    + eapply Eq_evaluates_to_false; eauto.
+  - inversion H; clear H; subst.
+    constructor.
+    auto.
+Qed.
+
 End State.
 
 End TypeChecking.
 
+Lemma post_env_of_stmt_mono E s E':
+  post_env_of_stmt E s = Some E' ->
+  forall x,
+  In x E -> In x E'.
+Proof.
+  revert E E'.
+  induction s; intros; simpl in H.
+  - simpl in H.
+    destruct (type_of E t); try congruence.
+    destruct t0; try congruence.
+  - destruct (type_of E t); try congruence.
+    destruct t0; try congruence.
+    injection H; clear H; intros; subst.
+    right; assumption.
+  - destruct (type_of E t); try congruence.
+    destruct t0; try congruence.
+    destruct (post_env_of_stmt E s1); try congruence.
+    destruct (post_env_of_stmt E s2); try congruence.
+  - destruct (type_of E t); try congruence.
+    destruct t0; try congruence.
+    destruct (post_env_of_stmt E s); try congruence.
+  - case_eq (post_env_of_stmt E s1); intros; rewrite H1 in H; try congruence.
+    apply IHs1 with (2:=H0) in H1.
+    apply IHs2 with (1:=H) (2:=H1).
+  - congruence.
+Qed.
+
+Fixpoint size_of_stmt(s: stmt): nat :=
+  match s with
+    If t s1 s2 => 1 + size_of_stmt s1 + size_of_stmt s2
+  | While t s => 1 + size_of_stmt s
+  | Seq s1 s2 => 1 + size_of_stmt s1 + size_of_stmt s2
+  | _ => 0
+  end.
+
+Require Import Classical.
+
 Lemma soundness_lemma:
-  forall E P j s Q,
-  post_env_of_stmt E (Assert P j ;; s) <> None ->
+  forall E P j s E' Q,
+  post_env_of_stmt E (Assert P j ;; s) = Some E' ->
   is_valid_proof_outline (Assert P j ;; s) = true ->
-  ends_with_assert s Q = true ->
+  ends_with_assert (Assert P j ;; s) Q = true ->
   forall S,
   Forall (fun x => S x <> None) E ->
   evaluates_to S P (VBool true) ->
-  (forall S', evaluates_to S' Q (VBool true) -> ~ terminates_in S s S') ->
+  (forall S', Forall (fun x => S' x <> None) E' -> evaluates_to S' Q (VBool true) -> ~ terminates_in S s S') ->
   diverges S s.
 Proof.
-  cofix Hcofix.
-  intros.
-  destruct s; simpl in H0; try discriminate.
-  destruct s1; simpl in H0; try discriminate.
-  - 
+  intros E P j s E'.
+  revert E P j E'.
+  apply Wf_nat.induction_ltof1 with (f:=size_of_stmt) (a:=s).
+  clear s.
+  intro s.
+  intros IH E P j E' Q Hwelltyped Hvalid Hendswith S HSE HP Hterm.
+  simpl in *.
+  case_eq (type_of E P); intros; rewrite H in Hwelltyped; try congruence.
+  destruct t; try congruence.
+  destruct s; simpl in *; try congruence.
+  destruct s1; simpl in *; try congruence.
+  - (* Assert t j0 *)
+    case_eq (type_of E t); intros; rewrite H0 in Hwelltyped; try congruence.
+    destruct t0; try congruence.
+    destruct j0; try congruence.
+    apply andb_prop in Hvalid.
+    destruct Hvalid as [Hvalid0 Hvalid].
+    assert (Ht: evaluates_to S t (VBool true)). {
+      assert (value_of S t = VBool true). {
+        apply is_valid_entailment_soundness with (2:=H) (3:=H0) (4:=Hvalid0); try assumption.
+        * apply Forall_forall. assumption.
+        * apply evaluates_to_unique with (2:=HP).
+          apply value_of_soundness with (E:=E).
+          -- apply Forall_forall; assumption.
+          -- congruence.
+      }
+      rewrite <- H1.
+      apply value_of_soundness with (E:=E).
+      * apply Forall_forall; assumption.
+      * congruence.
+    }
+    apply Seq_diverges2 with (S':=S).
+    + constructor.
+      assumption.
+    + apply IH with (E:=E) (P:=t) (Q:=Q) (E':=E'); try assumption.
+      * unfold ltof.
+        simpl.
+        lia.
+      * rewrite H0.
+        assumption.
+      * intros.
+        intro.
+        elim (Hterm S' H1 H2).
+        apply Seq_terminates_in with (S':=S).
+        -- constructor.
+           assumption.
+        -- assumption.
+  - (* Assign x t *)
+    destruct s2; try congruence.
+    destruct s2_1; try congruence.
+    rename t0 into P'.
+    case_eq (type_of E t); intros; rewrite H0 in Hwelltyped; try congruence.
+    destruct t0; try congruence.
+    apply andb_prop in Hvalid.
+    destruct Hvalid as [Hvalid0 Hvalid].
+    unfold term_eqb in Hvalid0.
+    destruct (term_eq_dec P (subst x t P')); try congruence.
+    subst.
+    apply Seq_diverges2 with (S':=update x (int_of_value (value_of S t)) S). {
+      constructor.
+      rewrite VInt_int_of_value_of with (E:=E).
+      - apply value_of_soundness with (E:=E).
+        + apply Forall_forall; assumption.
+        + congruence.
+      - apply Forall_forall; assumption.
+      - assumption.
+    }
+    assert (HP': evaluates_to (update x (int_of_value (value_of S t)) S) P' (VBool true)). {
+      apply subst_soundness with (2:=H0) (3:=HP).
+      apply Forall_forall; assumption.
+    }
+    apply Seq_diverges2 with (S':=update x (int_of_value (value_of S t)) S). {
+      constructor.
+      assumption.
+    }
+    apply IH with (E:=x :: E) (P:=P') (Q:=Q) (E':=E'); try assumption.
+    + unfold ltof.
+      simpl.
+      lia.
+    + constructor.
+      * unfold update.
+        destruct (string_dec x x); try congruence.
+      * clear Hwelltyped H H0 Hterm. revert E HSE.
+        induction E; intros.
+        -- constructor.
+        -- inversion HSE; clear HSE; subst.
+           constructor.
+           ++ unfold update.
+              destruct (string_dec x a).
+              ** congruence.
+              ** assumption.
+           ++ apply IHE; assumption.
+    + intros.
+      intro.
+      elim (Hterm S' H1 H2).
+      apply Seq_terminates_in with (S':=update x (int_of_value (value_of S t)) S).
+      * constructor.
+        rewrite VInt_int_of_value_of with (2:=H0).
+        -- apply value_of_soundness with (E:=E).
+           ++ apply Forall_forall; assumption.
+           ++ congruence.
+        -- apply Forall_forall; assumption.
+      * apply Seq_terminates_in with (S':=update x (int_of_value (value_of S t)) S).
+        -- constructor.
+           assumption.
+        -- assumption.
+  - case_eq (type_of E t); intros; rewrite H0 in Hwelltyped; try congruence.
+    destruct t0; try congruence.
+    case_eq (post_env_of_stmt E s1); intros; rewrite H1 in Hwelltyped; try congruence.
+    rename e into E'0.
+    destruct s1; try congruence.
+    destruct s1_1; try congruence.
+    destruct s2; try congruence.
+    destruct s2_1; try congruence.
+    apply andb_prop in Hvalid. destruct Hvalid as [Hvalid Hvalid1].
+    apply andb_prop in Hvalid. destruct Hvalid as [Hvalid Hvalid2].
+    unfold term_eqb in Hvalid2.
+    destruct (term_eq_dec t1 (BinOp And P (Not t))); try congruence. subst.
+    clear Hvalid2.
+    apply andb_prop in Hvalid. destruct Hvalid as [Hvalid Hvalid2].
+    apply andb_prop in Hvalid. destruct Hvalid as [Hvalid Hvalid3].
+    unfold term_eqb in Hvalid. destruct (term_eq_dec t0 (BinOp And P t)); try congruence. subst.
+    clear Hvalid.
+    destruct (classic (exists S', Forall (fun x => S' x <> None) E /\ evaluates_to S' (BinOp And P (Not t)) (VBool true) /\ terminates_in S (While t (Assert (BinOp And P t) j0;; s1_2)) S')). {
+      destruct H2 as [S' [HS'E [HS'P Hterminates]]].
+      eapply Seq_diverges2; try eassumption.
+      apply Seq_diverges2 with (S':=S'). {
+        constructor.
+        assumption.
+      }
+      apply IH with (E:=E) (P:=BinOp And P (Not t)) (Q:=Q) (E':=E'); try assumption.
+      - unfold ltof.
+        simpl; lia.
+      - intros.
+        intro.
+        elim (Hterm S'0 H2 H3).
+        apply Seq_terminates_in with (S':=S'); try assumption.
+        apply Seq_terminates_in with (S':=S'); try assumption.
+        constructor; assumption.
+    }
+    apply Seq_diverges1.
+    revert S HSE HP Hterm H2.
+    cofix Hcofix.
+    intros.
+    constructor.
+    assert (evaluates_to S t (VBool true)). {
+      case_eq (value_of S t); intros. {
+        assert (type_of_value (value_of S t) = TBool). {
+          apply type_of_value_of with (E:=E); try assumption.
+          apply Forall_forall; assumption.
+        }
+        rewrite H3 in H4; simpl in H4; congruence.
+      }
+      destruct b. 2:{
+        elim H2.
+        exists S.
+        split. assumption.
+        split. {
+          assert (true = true && negb false)%bool. reflexivity.
+          rewrite H4.
+          constructor. assumption.
+          constructor.
+          rewrite <- H3.
+          apply value_of_soundness with (E:=E); try assumption.
+          - apply Forall_forall; assumption.
+          - congruence.
+        }
+        constructor.
+        apply If_terminates_in with (b:=false).
+        - rewrite <- H3.
+          apply value_of_soundness with (E:=E).
+          + apply Forall_forall; assumption.
+          + congruence.
+        - constructor.
+      }
+      rewrite <- H3.
+      apply value_of_soundness with (E:=E).
+      * apply Forall_forall; assumption.
+      * congruence.
+    }
+    apply If_diverges with (b:=true).
+    + assumption.
+    + destruct (classic (exists S'', Forall (fun x => S'' x <> None) E'0 /\ evaluates_to S'' P (VBool true) /\ terminates_in S s1_2 S'')). {
+        destruct H4 as [S'' [HS''E'0 [HS''P Hs1_2_terminates]]].
+        apply Seq_diverges2 with (S':=S''). {
+          apply Seq_terminates_in with (S':=S). {
+            constructor.
+            assert (true = true && true)%bool. reflexivity.
+            rewrite H4.
+            constructor; try assumption.
+          }
+          assumption.
+        }
+        apply Hcofix; try assumption.
+        - apply Forall_forall; intros.
+          apply post_env_of_stmt_mono with (1:=H1) in H4.
+          apply Forall_forall with (1:=HS''E'0) (2:=H4).
+        - intros.
+          intro.
+          elim (Hterm S' H4 H5).
+          inversion H6; clear H6; intros; subst.
+          apply Seq_terminates_in with (S':=S'0); try assumption.
+          constructor.
+          apply If_terminates_in with (b:=true); try assumption.
+          apply Seq_terminates_in with (S':=S''); try assumption.
+          apply Seq_terminates_in with (S':=S); try assumption.
+          constructor.
+          assert (true = true && true)%bool. reflexivity.
+          rewrite H6.
+          constructor; assumption.
+        - intro.
+          destruct H4 as [S' [HS'E [HS'P Hterminates_in_S']]].
+          elim H2.
+          exists S'.
+          split. assumption.
+          split. assumption.
+          constructor.
+          apply If_terminates_in with (b:=true); try assumption.
+          apply Seq_terminates_in with (S':=S''). {
+            apply Seq_terminates_in with (S':=S). {
+              constructor.
+              assert (true = true && true)%bool. reflexivity.
+              rewrite H4.
+              constructor; assumption.
+            }
+            assumption.
+          }
+          assumption.
+      }
+      apply Seq_diverges1.
+      apply Seq_diverges2 with (S':=S). {
+        constructor.
+        assert (true = true && true)%bool. reflexivity.
+        rewrite H5.
+        constructor; assumption.
+      }
+      apply IH with (E:=E) (P:=BinOp And P t) (E':=E'0) (Q:=P); try assumption.
+      * unfold ltof. simpl. lia.
+      * assert (true = true && true)%bool. reflexivity.
+        rewrite H5.
+        constructor; assumption.
+      * intros.
+        intro.
+        elim H4.
+        exist
 
+    
 Theorem soundness E P j s Q:
   post_env_of_stmt E (Assert P j ;; s) <> None ->
   is_valid_proof_outline (Assert P j ;; s) = true ->
