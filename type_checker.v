@@ -18,24 +18,24 @@ Context (E: env).
 
 Fixpoint type_of(t: term): option type :=
   match t with
-    Val z => Some TInt
-  | Var x => if in_dec string_dec x E then Some TInt else None
-  | BinOp (Add|Sub) t1 t2 =>
+    Val l z => Some TInt
+  | Var l x => if in_dec string_dec x E then Some TInt else None
+  | BinOp l (Add|Sub) t1 t2 =>
     match type_of t1, type_of t2 with
       Some TInt, Some TInt => Some TInt
     | _, _ => None
     end
-  | BinOp Eq t1 t2 =>
+  | BinOp l Eq t1 t2 =>
     match type_of t1, type_of t2 with
       Some TInt, Some TInt => Some TBool
     | _, _ => None
     end
-  | BinOp And t1 t2 =>
+  | BinOp l And t1 t2 =>
     match type_of t1, type_of t2 with
       Some TBool, Some TBool => Some TBool
     | _, _ => None
     end
-  | Not t =>
+  | Not l t =>
     match type_of t with
       Some TBool => Some TBool
     | _ => None
@@ -46,18 +46,18 @@ End Environment.
 
 Fixpoint post_env_of_stmt(E: env)(s: stmt): option env :=
   match s with
-    Assert P j =>
+    Assert l P j =>
     match type_of E P with
       Some TBool => Some E
     | _ => None
     end
-  | Assign x t =>
+  | Assign l x t =>
     match type_of E t with
       Some TInt => Some (x::E)
     | _ => None
     end
-  | Pass => Some E
-  | If C s1 s2 =>
+  | Pass l => Some E
+  | If l C s1 s2 =>
     match type_of E C with
       Some TBool =>
       match post_env_of_stmt E s1 with
@@ -71,7 +71,7 @@ Fixpoint post_env_of_stmt(E: env)(s: stmt): option env :=
       end
     | _ => None
     end
-  | While C s =>
+  | While l C s =>
     match type_of E C with
       Some TBool =>
       match post_env_of_stmt E s with

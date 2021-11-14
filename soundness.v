@@ -35,20 +35,20 @@ Context (S: state)(HS: forall x, In x E -> S x <> None).
 
 Fixpoint value_of(t: term): value :=
   match t with
-    Val z => VInt z
-  | Var x =>
+    Val l z => VInt z
+  | Var l x =>
     match S x with
       None => VInt 0
     | Some z => VInt z
     end
-  | BinOp op t1 t2 =>
+  | BinOp l op t1 t2 =>
     match op with
       Add => VInt (int_of_value (value_of t1) + int_of_value (value_of t2))
     | Sub => VInt (int_of_value (value_of t1) - int_of_value (value_of t2))
     | Eq => VBool (Z.eqb (int_of_value (value_of t1)) (int_of_value (value_of t2)))
     | And => VBool (bool_of_value (value_of t1) && bool_of_value (value_of t2))
     end
-  | Not t => VBool (negb (bool_of_value (value_of t)))
+  | Not l t => VBool (negb (bool_of_value (value_of t)))
   end.
 
 Definition type_of_value(v: value): type :=
@@ -218,6 +218,46 @@ Proof.
     lia.
 Qed.
 
+Lemma term_equiv_type_of t1 t2:
+  term_equiv t1 t2 ->
+  type_of t1 = type_of t2.
+Proof.
+  induction 1.
+  - reflexivity.
+  - reflexivity.
+  - destruct op; simpl; rewrite IHterm_equiv1; rewrite IHterm_equiv2; reflexivity.
+  - simpl. rewrite IHterm_equiv. reflexivity.
+Qed.
+
+Lemma term_equivb_type_of t1 t2:
+  term_equivb t1 t2 = true ->
+  type_of t1 = type_of t2.
+Proof.
+  intro.
+  apply term_equivb_eq_true in H.
+  apply term_equiv_type_of; assumption.
+Qed.
+
+Lemma term_equiv_value_of t1 t2:
+  term_equiv t1 t2 ->
+  value_of t1 = value_of t2.
+Proof.
+  induction 1.
+  - reflexivity.
+  - reflexivity.
+  - destruct op; simpl; congruence.
+  - simpl; congruence.
+Qed.
+
+Lemma term_equivb_value_of t1 t2:
+  term_equivb t1 t2 = true ->
+  value_of t1 = value_of t2.
+Proof.
+  intros.
+  apply term_equivb_eq_true in H.
+  apply term_equiv_value_of; assumption.
+Qed.
+
 Lemma value_of_poly_add_term z t p:
   value_of_poly (poly_add_term z t p) = (z * int_of_value (value_of t) + value_of_poly p)%Z.
 Proof.
@@ -225,8 +265,9 @@ Proof.
   - reflexivity.
   - destruct a as [z0 t0].
     simpl.
-    destruct (term_eq_dec t t0).
-    + subst.
+    case_eq (term_equivb t t0); intro He.
+    + apply term_equivb_value_of in He.
+      rewrite He.
       destruct (Z.eq_dec (z + z0) 0); simpl; lia.
     + simpl; lia.
 Qed.
@@ -354,8 +395,8 @@ Proof.
     inversion H; clear H; subst.
     simpl in H2.
     simpl.
-    destruct (term_eq_dec t t0).
-    + subst.
+    case_eq (term_equivb t t0); intro He.
+    + apply term_equivb_value_of in He.
       destruct (Z.eq_dec (z + z0) 0).
       * assumption.
       * constructor; assumption.
@@ -434,10 +475,8 @@ Proof.
     inversion H; clear H; subst.
     simpl in H3.
     simpl in H0.
-    destruct (term_eq_dec t t0).
-    + subst.
-      congruence.
-    + apply IHp; assumption.
+    case_eq (term_equivb t t0); intro He; rewrite He in H0; try congruence.
+    apply IHp; assumption.
 Qed.
 
 Lemma is_Z_entailment0_soundness H C:
@@ -511,7 +550,7 @@ Proof.
   induction H; simpl.
   - destruct H_negated; try (intros; discriminate).
   - destruct (S x); intros; discriminate.
-  - destruct H_negated; try (intros; discriminate); apply is_Z_entailment0_soundness with (H:=BinOp op H H0).
+  - destruct H_negated; try (intros; discriminate); apply is_Z_entailment0_soundness with (H:=BinOp l op H H0).
   - intros; apply IHterm with (H_negated := negb H_negated); try assumption.
     + destruct (type_of H); try discriminate.
       destruct t; congruence.
@@ -540,30 +579,29 @@ Qed.
 
 Fixpoint term_size(t: term): nat :=
   match t with
-  | BinOp op t1 t2 => term_size t1 + term_size t2 + 1
-  | Not t => term_size t + 1
+  | BinOp l op t1 t2 => term_size t1 + term_size t2 + 1
+  | Not l t => term_size t + 1
   | _ => 0
   end.
 
 Lemma rewrites_unfold lhs rhs t:
   rewrites lhs rhs t =
-  if term_eq_dec t lhs then
+  if term_equivb t lhs then
     [rhs; t]
-  else if term_eq_dec t rhs then
+  else if term_equivb t rhs then
     [lhs; t]
   else
     match t with
-      BinOp op t1 t2 =>
+      BinOp l op t1 t2 =>
       flat_map (fun t1' =>
-        map (fun t2' => BinOp op t1' t2') (rewrites lhs rhs t2)
+        map (fun t2' => BinOp l op t1' t2') (rewrites lhs rhs t2)
       ) (rewrites lhs rhs t1)
-    | Not t => map (fun t' => Not t') (rewrites lhs rhs t)
+    | Not l t => map (fun t' => Not l t') (rewrites lhs rhs t)
     | t => [t]
     end.
 Proof.
   destruct t; reflexivity.
 Qed.
-
 
 Lemma Forall_flat_map{A B} (P: A -> Prop) (f: B -> list A) (xs: list B):
   Forall (fun y => Forall P (f y)) xs ->
@@ -584,19 +622,19 @@ Proof.
   apply Wf_nat.induction_ltof1 with (f:=term_size) (a:=t).
   clear t; intros t IH.
   rewrite rewrites_unfold.
-  destruct (term_eq_dec t lhs).
-  - subst.
+  case_eq (term_equivb t lhs); intro He.
+  - apply term_equivb_value_of in He; rewrite He.
     constructor.
     + congruence.
     + constructor.
-      * reflexivity.
+      * assumption.
       * constructor.
-  - destruct (term_eq_dec t rhs).
-    + subst.
+  - case_eq (term_equivb t rhs); intro He'.
+    + apply term_equivb_value_of in He'; rewrite He'.
       constructor.
       * congruence.
       * constructor.
-        -- reflexivity.
+        -- assumption.
         -- constructor.
     + destruct t; try (constructor; trivial).
       * apply Forall_flat_map.
@@ -646,11 +684,14 @@ Lemma is_valid_conjunct_entailment_soundness Hs C j:
 Proof.
   intros.
   unfold is_valid_conjunct_entailment in H1.
-  destruct (in_dec term_eq_dec C Hs). {
-    apply (proj1 (Forall_forall _ _)) with (2:=i) in H2.
-    assumption.
+  case_eq (existsb (term_equivb C) Hs); intro He; rewrite He in H1. {
+    apply existsb_exists in He.
+    destruct He as [t [Ht Ht_]].
+    apply (proj1 (Forall_forall _ _)) with (2:=Ht) in H2.
+    apply term_equivb_value_of in Ht_.
+    congruence.
   }
-  destruct j as [|k|k1 k2].
+  destruct j as [l|l lk k|l lk1 k1 lk2 k2].
   - apply is_Z_tautology_soundness with (1:=H0) (2:=H1).
   - case_eq (nth_error Hs k); intros; rewrite H3 in H1; try discriminate.
     apply nth_error_In in H3.
@@ -661,7 +702,9 @@ Proof.
     destruct t; try discriminate.
     destruct op; try discriminate.
     case_eq (nth_error Hs k2); intros; rewrite H4 in H1; try discriminate.
-    destruct (in_dec term_eq_dec C (rewrites t1 t2 t)); try discriminate.
+    case_eq (existsb (term_equivb C) (rewrites t1 t2 t)); intro He'; rewrite He' in H1; try discriminate.
+    apply existsb_exists in He'. destruct He' as [t' [Ht'In Ht']].
+    apply term_equivb_value_of in Ht'. rewrite Ht'.
     lapply (rewrites_soundness t1 t2 t). 2:{
       apply nth_error_In in H3.
       apply (proj1 (Forall_forall _ _)) with (2:=H3) in H2.
@@ -680,7 +723,7 @@ Proof.
       assumption.
     }
     intros.
-    apply (proj1 (Forall_forall _ _)) with (2:=i) in H5.
+    apply (proj1 (Forall_forall _ _)) with (2:=Ht'In) in H5.
     apply nth_error_In in H4.
     apply (proj1 (Forall_forall _ _)) with (2:=H4) in H2.
     congruence.
@@ -787,33 +830,33 @@ Proof.
   - inversion H; clear H; subst; reflexivity.
   - inversion H0; clear H0; subst. congruence.
   - inversion H1; clear H1; subst.
-    apply IHevaluates_to1 in H4.
-    apply IHevaluates_to2 in H6.
+    apply IHevaluates_to1 in H6.
+    apply IHevaluates_to2 in H7.
     congruence.
   - inversion H1; clear H1; subst.
-    apply IHevaluates_to1 in H4.
-    apply IHevaluates_to2 in H6.
+    apply IHevaluates_to1 in H6.
+    apply IHevaluates_to2 in H7.
     congruence.
   - inversion H1; clear H1; subst.
-    + apply IHevaluates_to1 in H4.
-      apply IHevaluates_to2 in H6.
+    + apply IHevaluates_to1 in H6.
+      apply IHevaluates_to2 in H7.
       congruence.
-    + apply IHevaluates_to1 in H4.
-      apply IHevaluates_to2 in H5.
+    + apply IHevaluates_to1 in H5.
+      apply IHevaluates_to2 in H7.
       subst.
       congruence.
   - inversion H2; clear H2; subst.
-    + apply IHevaluates_to1 in H5.
-      apply IHevaluates_to2 in H7.
+    + apply IHevaluates_to1 in H7.
+      apply IHevaluates_to2 in H8.
       congruence.
     + reflexivity.
   - inversion H1; clear H1; subst.
-    apply IHevaluates_to1 in H4.
-    apply IHevaluates_to2 in H6.
+    apply IHevaluates_to1 in H6.
+    apply IHevaluates_to2 in H7.
     congruence.
   - inversion H0; clear H0; subst.
-    apply IHevaluates_to in H2.
-    injection H2; clear H2; intros; subst.
+    apply IHevaluates_to in H4.
+    injection H4; clear H4; intros; subst.
     reflexivity.
 Qed.
 
@@ -885,8 +928,8 @@ Qed.
 
 Fixpoint size_of_stmt(s: stmt): nat :=
   match s with
-    If t s1 s2 => 1 + size_of_stmt s1 + size_of_stmt s2
-  | While t s => 1 + size_of_stmt s
+    If l t s1 s2 => 1 + size_of_stmt s1 + size_of_stmt s2
+  | While l t s => 1 + size_of_stmt s
   | Seq s1 s2 => 1 + size_of_stmt s1 + size_of_stmt s2
   | _ => 0
   end.
@@ -894,10 +937,10 @@ Fixpoint size_of_stmt(s: stmt): nat :=
 Require Import Classical.
 
 Lemma soundness_lemma:
-  forall E P j s E' Q,
-  post_env_of_stmt E (Assert P j ;; s) = Some E' ->
-  is_valid_proof_outline (Assert P j ;; s) = true ->
-  ends_with_assert (Assert P j ;; s) Q = true ->
+  forall E la P j s E' Q,
+  post_env_of_stmt E (Assert la P j ;; s) = Some E' ->
+  is_valid_proof_outline (Assert la P j ;; s) = true ->
+  ends_with_assert (Assert la P j ;; s) Q = true ->
   forall S,
   Forall (fun x => S x <> None) E ->
   evaluates_to S P (VBool true) ->
@@ -907,12 +950,12 @@ Lemma soundness_lemma:
    ~ terminates_in S s S') ->
   diverges S s.
 Proof.
-  intros E P j s E'.
-  revert E P j E'.
+  intros E la P j s E'.
+  revert E la P j E'.
   apply Wf_nat.induction_ltof1 with (f:=size_of_stmt) (a:=s).
   clear s.
   intro s.
-  intros IH E P j E' Q Hwelltyped Hvalid Hendswith S HSE HP Hterm.
+  intros IH E la P j E' Q Hwelltyped Hvalid Hendswith S HSE HP Hterm.
   simpl in *.
   case_eq (type_of E P); intros; rewrite H in Hwelltyped; try congruence.
   destruct t; try congruence.
@@ -941,7 +984,7 @@ Proof.
     apply Seq_diverges2 with (S':=S).
     + constructor.
       assumption.
-    + apply IH with (E:=E) (P:=t) (Q:=Q) (E':=E'); try assumption.
+    + apply IH with (E:=E) (la:=l) (P:=t) (Q:=Q) (E':=E'); try assumption.
       * unfold ltof.
         simpl.
         lia.
@@ -962,9 +1005,9 @@ Proof.
     destruct t0; try congruence.
     apply andb_prop in Hvalid.
     destruct Hvalid as [Hvalid0 Hvalid].
-    unfold term_eqb in Hvalid0.
-    destruct (term_eq_dec P (subst x t P')); try congruence.
-    subst.
+    pose proof Hvalid0 as Hvalue_of.
+    apply term_equivb_value_of with (S:=S) in Hvalue_of.
+    apply term_equivb_type_of with (E:=E) in Hvalid0.
     apply Seq_diverges2 with (S':=update x (int_of_value (value_of S t)) S). {
       constructor.
       rewrite VInt_int_of_value_of with (E:=E).
@@ -974,8 +1017,14 @@ Proof.
       - apply Forall_forall; assumption.
       - assumption.
     }
+    assert (HP'': evaluates_to S (subst x t P') (value_of S (subst x t P'))). {
+      apply value_of_soundness with (E:=E).
+      - apply Forall_forall; assumption.
+      - rewrite <- Hvalid0. congruence.
+    }
     assert (HP': evaluates_to (update x (int_of_value (value_of S t)) S) P' (VBool true)). {
-      apply subst_soundness with (2:=H0) (3:=HP).
+      
+      apply subst_soundness with (2:=H0) (3:=HP'').
       apply Forall_forall; assumption.
     }
     apply Seq_diverges2 with (S':=update x (int_of_value (value_of S t)) S). {
