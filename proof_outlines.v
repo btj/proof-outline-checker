@@ -54,6 +54,16 @@ Inductive stmt :=
 | Pass(l: loc)
 .
 
+Fixpoint loc_of_stmt(s: stmt) :=
+  match s with
+    Assert l t j => l
+  | Assign l x t => l
+  | If l t s1 s2 => l
+  | While l t s => l
+  | Seq s1 s2 => loc_of_stmt s1
+  | Pass l => l
+  end.
+
 Definition True_term l := BinOp l Eq (Val l 0) (Val l 0).
 
 Infix ";;" := Seq (at level 60, right associativity).

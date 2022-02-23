@@ -939,7 +939,7 @@ Require Import Classical.
 Lemma soundness_lemma:
   forall E la P j s E' Q,
   post_env_of_stmt E (Assert la P j ;; s) = Some E' ->
-  is_valid_proof_outline (Assert la P j ;; s) = true ->
+  check_proof_outline (Assert la P j ;; s) = ok tt ->
   ends_with_assert (Assert la P j ;; s) Q = true ->
   forall S,
   Forall (fun x => S x <> None) E ->
@@ -965,8 +965,8 @@ Proof.
     case_eq (type_of E t); intros; rewrite H0 in Hwelltyped; try congruence.
     destruct t0; try congruence.
     destruct j0; try congruence.
-    apply andb_prop in Hvalid.
-    destruct Hvalid as [Hvalid0 Hvalid].
+    case_eq (is_valid_entailment P t j0); intros; rewrite H1 in Hvalid; try discriminate.
+    rename H1 into Hvalid0.
     assert (Ht: evaluates_to S t (VBool true)). {
       assert (value_of S t = VBool true). {
         apply is_valid_entailment_soundness with (2:=H) (3:=H0) (4:=Hvalid0); try assumption.
@@ -1003,8 +1003,8 @@ Proof.
     rename t0 into P'.
     case_eq (type_of E t); intros; rewrite H0 in Hwelltyped; try congruence.
     destruct t0; try congruence.
-    apply andb_prop in Hvalid.
-    destruct Hvalid as [Hvalid0 Hvalid].
+    case_eq (term_equivb P (subst x t P')); intros; rewrite H1 in Hvalid; try discriminate.
+    rename H1 into Hvalid0.
     pose proof Hvalid0 as Hvalue_of.
     apply term_equivb_value_of with (S:=S) in Hvalue_of.
     apply term_equivb_type_of with (E:=E) in Hvalid0.
@@ -1077,16 +1077,20 @@ Proof.
     rename e into E'0.
     destruct s1; try congruence.
     destruct s1_1; try congruence.
+    rename t0 into Pbody.
     destruct s2; try congruence.
     destruct s2_1; try congruence.
-    apply andb_prop in Hvalid. destruct Hvalid as [Hvalid Hcont_valid].
-    apply andb_prop in Hvalid. destruct Hvalid as [Hvalid HQ_equiv].
+    rename t0 into Qwhile.
+    case_eq (term_equivb Pbody (BinOp la And P t)); intros; rewrite H2 in Hvalid; try discriminate.
+    rename H2 into HP_equiv.
+    case_eq (ends_with_assert (Assert l0 Pbody j0;; s1_2) P); intros; rewrite H2 in Hvalid; try discriminate.
+    rename H2 into Hbody_ends_with_P.
+    case_eq (check_proof_outline (Assert l0 Pbody j0;; s1_2)); intros; rewrite H2 in Hvalid; try discriminate.
+    rename H2 into Hbody_valid.
+    case_eq (term_equivb Qwhile (BinOp la And P (Not la t))); intros; rewrite H2 in Hvalid; try discriminate.
+    rename H2 into HQ_equiv.
     apply term_equivb_eq_true in HQ_equiv.
-    apply andb_prop in Hvalid. destruct Hvalid as [Hvalid Hbody_valid].
-    apply andb_prop in Hvalid. destruct Hvalid as [HP_equiv Hbody_ends_with_P].
     apply term_equivb_eq_true in HP_equiv.
-    rename t1 into Qwhile.
-    rename t0 into Pbody.
     rename l0 into lPbody.
     rename l1 into lQwhile.
     destruct (classic (
@@ -1248,6 +1252,8 @@ Proof.
       }
       eapply IH with (E:=E) (P:=Pbody) (E':=E'0) (Q:=P); try eassumption.
       * unfold ltof. simpl. lia.
+      * destruct a.
+        apply Hbody_valid.
       * intros.
         intro.
         elim H4.
@@ -1275,7 +1281,7 @@ Qed.
 
 Theorem soundness E l P j s Q:
   post_env_of_stmt E (Assert l P j ;; s) <> None ->
-  is_valid_proof_outline (Assert l P j ;; s) = true ->
+  check_proof_outline (Assert l P j ;; s) = ok tt ->
   ends_with_assert (Assert l P j ;; s) Q = true ->
   forall S,
   Forall (fun x => S x <> None) E ->
