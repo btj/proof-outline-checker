@@ -1023,22 +1023,31 @@ Proof.
       - rewrite <- Hvalid0. congruence.
     }
     assert (HP': evaluates_to (update x (int_of_value (value_of S t)) S) P' (VBool true)). {
-      
-      apply subst_soundness with (2:=H0) (3:=HP'').
-      apply Forall_forall; assumption.
+      apply subst_soundness with (2:=H0). {
+        apply Forall_forall; assumption.
+      }
+      assert (value_of S (subst x t P') = VBool true). {
+        rewrite <- Hvalue_of.
+        apply evaluates_to_unique with (2:=HP).
+        apply value_of_soundness with (E:=E).
+        - apply Forall_forall; assumption.
+        - congruence.
+      }
+      rewrite <- H1.
+      assumption.
     }
     apply Seq_diverges2 with (S':=update x (int_of_value (value_of S t)) S). {
       constructor.
       assumption.
     }
-    apply IH with (E:=x :: E) (P:=P') (Q:=Q) (E':=E'); try assumption.
+    eapply IH with (E:=x :: E) (P:=P') (Q:=Q) (E':=E'); try eassumption.
     + unfold ltof.
       simpl.
       lia.
     + constructor.
       * unfold update.
         destruct (string_dec x x); try congruence.
-      * clear Hwelltyped H H0 Hterm. revert E HSE.
+      * clear Hwelltyped H H0 Hterm Hvalid0. revert E HSE.
         induction E; intros.
         -- constructor.
         -- inversion HSE; clear HSE; subst.
