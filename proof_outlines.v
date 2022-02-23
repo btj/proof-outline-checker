@@ -25,7 +25,7 @@ assert r == n # Z op 1
 *)
 
 Parameter loc: Set.
-Extract Constant loc => "Js.Unsafe.any".
+Extract Constant loc => "Js_of_ocaml.Js.Unsafe.any".
 Parameter loc_eq_dec: forall (l1 l2: loc), {l1 = l2} + {l1 <> l2}.
 Extract Constant loc_eq_dec => "(fun l1 l2 => failwith ""Not implemented"")".
 Parameter locN: Z -> loc. (* Used only in examples in Coq. *)

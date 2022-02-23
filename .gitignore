@@ -12,3 +12,7 @@ proof_checker.mli
 *.byte
 
 proof_checker.js
+
+*.d
+*.conf
+Makefile*
