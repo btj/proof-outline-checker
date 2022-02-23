@@ -1079,23 +1079,28 @@ Proof.
     destruct s1_1; try congruence.
     destruct s2; try congruence.
     destruct s2_1; try congruence.
-    apply andb_prop in Hvalid. destruct Hvalid as [Hvalid Hvalid1].
-    apply andb_prop in Hvalid. destruct Hvalid as [Hvalid Hvalid2].
-    unfold term_eqb in Hvalid2.
-    destruct (term_eq_dec t1 (BinOp And P (Not t))); try congruence. subst.
-    clear Hvalid2.
-    apply andb_prop in Hvalid. destruct Hvalid as [Hvalid Hvalid2].
-    apply andb_prop in Hvalid. destruct Hvalid as [Hvalid Hvalid3].
-    unfold term_eqb in Hvalid. destruct (term_eq_dec t0 (BinOp And P t)); try congruence. subst.
-    clear Hvalid.
-    destruct (classic (exists S', Forall (fun x => S' x <> None) E /\ evaluates_to S' (BinOp And P (Not t)) (VBool true) /\ terminates_in S (While t (Assert (BinOp And P t) j0;; s1_2)) S')). {
+    apply andb_prop in Hvalid. destruct Hvalid as [Hvalid Hcont_valid].
+    apply andb_prop in Hvalid. destruct Hvalid as [Hvalid HQ_equiv].
+    apply term_equivb_eq_true in HQ_equiv.
+    apply andb_prop in Hvalid. destruct Hvalid as [Hvalid Hbody_valid].
+    apply andb_prop in Hvalid. destruct Hvalid as [HP_equiv Hbody_ends_with_P].
+    apply term_equivb_eq_true in HP_equiv.
+    rename t1 into Qwhile.
+    rename t0 into Pbody.
+    rename l0 into lPbody.
+    rename l1 into lQwhile.
+    destruct (classic (
+        exists S',
+        Forall (fun x => S' x <> None) E /\
+        evaluates_to S' Qwhile (VBool true) /\
+        terminates_in S (While l t (Assert lPbody Pbody j0;; s1_2)) S')). {
       destruct H2 as [S' [HS'E [HS'P Hterminates]]].
       eapply Seq_diverges2; try eassumption.
       apply Seq_diverges2 with (S':=S'). {
         constructor.
         assumption.
       }
-      apply IH with (E:=E) (P:=BinOp And P (Not t)) (Q:=Q) (E':=E'); try assumption.
+      eapply IH with (E:=E) (P:=Qwhile) (Q:=Q) (E':=E'); try eassumption.
       - unfold ltof.
         simpl; lia.
       - intros.
@@ -1110,6 +1115,16 @@ Proof.
     cofix Hcofix.
     intros.
     constructor.
+    pose proof Hwelltyped as Hwelltyped'.
+    simpl in Hwelltyped'.
+    case_eq (type_of E Qwhile); intros; rewrite H3 in Hwelltyped'; try discriminate.
+    destruct t0; try discriminate.
+    rename H3 into Htype_of_Qwhile.
+    pose proof H1 as Hbody_well_typed'.
+    simpl in Hbody_well_typed'.
+    case_eq (type_of E Pbody); intros; rewrite H3 in Hbody_well_typed'; try discriminate.
+    destruct t0; try discriminate.
+    rename H3 into Htype_of_Pbody.
     assert (evaluates_to S t (VBool true)). {
       case_eq (value_of S t); intros. {
         assert (type_of_value (value_of S t) = TBool). {
@@ -1123,12 +1138,21 @@ Proof.
         exists S.
         split. assumption.
         split. {
-          assert (true = true && negb false)%bool. reflexivity.
-          rewrite H4.
-          constructor. assumption.
-          constructor.
-          rewrite <- H3.
-          apply value_of_soundness with (E:=E); try assumption.
+          assert (value_of S Qwhile = VBool true). {
+            rewrite term_equiv_value_of with (1:=HQ_equiv).
+            simpl.
+            assert (value_of S P = VBool true). {
+              apply evaluates_to_unique with (2:=HP).
+              apply value_of_soundness with (E:=E).
+              - apply Forall_forall; assumption.
+              - congruence.
+            }
+            rewrite H4.
+            rewrite H3.
+            reflexivity.
+          }
+          rewrite <- H4.
+          apply value_of_soundness with (E:=E).
           - apply Forall_forall; assumption.
           - congruence.
         }
@@ -1145,16 +1169,43 @@ Proof.
       * apply Forall_forall; assumption.
       * congruence.
     }
+    assert (HPbody': value_of S Pbody = VBool true). {
+      rewrite term_equiv_value_of with (1:=HP_equiv).
+      simpl.
+      assert (value_of S P = VBool true). {
+        apply evaluates_to_unique with (2:=HP).
+        apply value_of_soundness with (E:=E).
+        - apply Forall_forall; assumption.
+        - congruence.
+      }
+      rewrite H4.
+      assert (value_of S t = VBool true). {
+        apply evaluates_to_unique with (2:=H3).
+        apply value_of_soundness with (E:=E).
+        - apply Forall_forall; assumption.
+        - congruence.
+      }
+      rewrite H5.
+      reflexivity.
+    }
+    assert (HPbody: evaluates_to S Pbody (VBool true)). {
+      rewrite <- HPbody'.
+      apply value_of_soundness with (E:=E).
+      - apply Forall_forall; assumption.
+      - congruence.
+    }
     apply If_diverges with (b:=true).
     + assumption.
-    + destruct (classic (exists S'', Forall (fun x => S'' x <> None) E'0 /\ evaluates_to S'' P (VBool true) /\ terminates_in S s1_2 S'')). {
+    + destruct (classic (
+          exists S'',
+          Forall (fun x => S'' x <> None) E'0 /\
+          evaluates_to S'' P (VBool true) /\
+          terminates_in S s1_2 S'')). {
         destruct H4 as [S'' [HS''E'0 [HS''P Hs1_2_terminates]]].
         apply Seq_diverges2 with (S':=S''). {
           apply Seq_terminates_in with (S':=S). {
             constructor.
-            assert (true = true && true)%bool. reflexivity.
-            rewrite H4.
-            constructor; try assumption.
+            assumption.
           }
           assumption.
         }
@@ -1172,9 +1223,7 @@ Proof.
           apply Seq_terminates_in with (S':=S''); try assumption.
           apply Seq_terminates_in with (S':=S); try assumption.
           constructor.
-          assert (true = true && true)%bool. reflexivity.
-          rewrite H6.
-          constructor; assumption.
+          assumption.
         - intro.
           destruct H4 as [S' [HS'E [HS'P Hterminates_in_S']]].
           elim H2.
@@ -1186,9 +1235,7 @@ Proof.
           apply Seq_terminates_in with (S':=S''). {
             apply Seq_terminates_in with (S':=S). {
               constructor.
-              assert (true = true && true)%bool. reflexivity.
-              rewrite H4.
-              constructor; assumption.
+              assumption.
             }
             assumption.
           }
@@ -1197,38 +1244,46 @@ Proof.
       apply Seq_diverges1.
       apply Seq_diverges2 with (S':=S). {
         constructor.
-        assert (true = true && true)%bool. reflexivity.
-        rewrite H5.
-        constructor; assumption.
+        assumption.
       }
-      apply IH with (E:=E) (P:=BinOp And P t) (E':=E'0) (Q:=P); try assumption.
+      eapply IH with (E:=E) (P:=Pbody) (E':=E'0) (Q:=P); try eassumption.
       * unfold ltof. simpl. lia.
-      * assert (true = true && true)%bool. reflexivity.
-        rewrite H5.
-        constructor; assumption.
       * intros.
         intro.
         elim H4.
         exists S'; tauto.
   - (* Pass *)
     injection Hwelltyped; clear Hwelltyped; intros; subst.
-    unfold term_eqb in Hendswith.
-    destruct (term_eq_dec P Q); try congruence; subst.
-    elim (Hterm S HSE HP).
+    apply term_equivb_eq_true in Hendswith.
+    assert (evaluates_to S Q (VBool true)). {
+      assert (value_of S Q = VBool true). {
+        rewrite <- term_equiv_value_of with (1:=Hendswith).
+        apply evaluates_to_unique with (2:=HP).
+        apply value_of_soundness with (E:=E').
+        - apply Forall_forall; assumption.
+        - congruence.
+      }
+      rewrite <- H0.
+      apply value_of_soundness with (E:=E').
+      - apply Forall_forall; assumption.
+      - rewrite <- term_equiv_type_of with (1:=Hendswith).
+        congruence.
+    }
+    elim (Hterm S HSE H0).
     constructor.
 Qed.
 
-Theorem soundness E P j s Q:
-  post_env_of_stmt E (Assert P j ;; s) <> None ->
-  is_valid_proof_outline (Assert P j ;; s) = true ->
-  ends_with_assert (Assert P j ;; s) Q = true ->
+Theorem soundness E l P j s Q:
+  post_env_of_stmt E (Assert l P j ;; s) <> None ->
+  is_valid_proof_outline (Assert l P j ;; s) = true ->
+  ends_with_assert (Assert l P j ;; s) Q = true ->
   forall S,
   Forall (fun x => S x <> None) E ->
   evaluates_to S P (VBool true) ->
   is_safe S s (fun S' => evaluates_to S' Q (VBool true)).
 Proof.
   intros.
-  case_eq (post_env_of_stmt E (Assert P j ;; s)); intros; rewrite H4 in H; try congruence.
+  case_eq (post_env_of_stmt E (Assert l P j ;; s)); intros; rewrite H4 in H; try congruence.
   rename e into E'.
   destruct (classic (exists S',
    Forall (fun x => S' x <> None) E' /\
