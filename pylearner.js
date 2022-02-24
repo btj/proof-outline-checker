@@ -320,6 +320,39 @@ class NullLiteral extends Expression {
   }
 }
 
+class UnaryOperatorExpression extends Expression {
+  constructor(loc, instrLoc, operator, operand) {
+    super(loc, instrLoc);
+    this.operator = operator;
+    this.operand = operand;
+  }
+
+  check(env) {
+    switch (this.operator) {
+      case 'not':
+        this.operand.checkAgainst(env, booleanType);
+        return booleanType;
+      default:
+        this.executionError("Operator not supported");
+    }
+  }
+
+  eval(v) {
+    switch (this.operator) {
+      case 'not': return !v;
+      default:
+        this.executionError("Operator not supported");
+    }
+  }
+
+  async evaluate(env) {
+    await this.operand.evaluate(env);
+    await this.breakpoint();
+    let [v] = pop(1);
+    this.push(this.eval(v));
+  }
+}
+
 class BinaryOperatorExpression extends Expression {
   constructor(loc, instrLoc, leftOperand, operator, rightOperand) {
     super(loc, instrLoc);
@@ -442,11 +475,11 @@ class AssignmentExpression extends Expression {
     if (this.op == '=') {
       let t = this.lhs.check_(env);
       this.rhs.checkAgainst(env, t);
-      return t;
+      return voidType;
     } else  {
       this.lhs.checkAgainst(env, intType);
       this.rhs.checkAgainst(env, intType);
-      return intType;
+      return voidType;
     }
   }
 
@@ -1481,6 +1514,14 @@ class Parser {
         let e = this.parsePostfixExpression();
         return new BinaryOperatorExpression(this.popLoc(), instrLoc, new IntLiteral(instrLoc, 0, true), '-', e);
       }
+      case "not": {
+        this.pushStart();
+        let op = this.token;
+        this.next();
+        let instrLoc = this.popLoc();
+        let e = this.parsePostfixExpression();
+        return new UnaryOperatorExpression(this.popLoc(), instrLoc, op, e);
+      }
       default:
         this.parseError("Number or identifier expected");
     }
@@ -2308,6 +2349,35 @@ function updateButtonStates() {
 }
 
 examples = [{
+  title: 'Copy a number',
+  declarations:
+`def copy(n):
+
+    assert True # PRECONDITION
+    assert 0 == n - n # Z
+    i = n
+    assert 0 == n - i
+    r = 0
+    assert r == n - i
+    while i != 0:
+        assert r == n - i and i != 0
+        assert r + 1 == n - (i - 1) # Z op 1
+        i = i - 1
+        assert r + 1 == n - i
+        r = r + 1
+        assert r == n - i
+    assert r == n - i and not i != 0
+    assert r == n - i and i == 0 # Z op 2
+    assert r == n - 0 # Herschrijven met 2 in 1
+    assert r == n # Z op 1 # POSTCONDITION
+
+    return r
+`,
+  statements:
+`assert copy(2) == 2
+assert copy(7) == 7`,
+  expression: `copy(3)`
+}, {
   title: 'Faculty',
   declarations:
 `# precondition: x is positive
