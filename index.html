@@ -34,7 +34,8 @@
     <table width="100%"><tr><td width="*1"><h1>PyLearner</h1></td><td style="text-align: center">Examples: <select id="examples"></select></td><td style="text-align: right"><a href="exercises.html">Exercises</a></td></tr></table>
     <table width="100%" style="table-layout: fixed"><tr>
     <td width="50%" style="vertical-align: top">
-      <p><b>Declarations:</b></p>
+      <p><b>Declarations:</b>
+        <button id="checkProofOutlinesButton" onClick="checkProofOutlines()">Check proof outlines</button></p>
       <p><textarea id="declarations"></textarea></p>
       <p><b>Statements:</b>
         <button id="executeButton" onClick="executeStatements(false)">Execute (Ctrl+Enter)</button>
@@ -154,6 +155,7 @@
       arrow.x2.baseVal.value = toRects[0].left - machineRects[0].left;
       arrow.y2.baseVal.value = toRects[0].top - machineRects[0].top;
       </script -->
+  <script src="proof_checker.js"></script>
   <script src="pylearner.js"></script>
   </body>
 </html>

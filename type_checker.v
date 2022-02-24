@@ -86,3 +86,12 @@ Fixpoint post_env_of_stmt(E: env)(s: stmt): option env :=
     | None => None
     end
   end.
+
+Import ListNotations.
+
+Local Open Scope string_scope.
+
+Goal post_env_of_stmt ["n"] outline1 = Some ["r"; "i"; "n"].
+Proof.
+  reflexivity.
+Qed.

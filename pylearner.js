@@ -35,6 +35,14 @@ for (let operator of operatorsList) {
     operatorPrefixes[operator.substring(0, i)] = true;
 }
 
+class Comment {
+  constructor(doc, start, text) {
+    this.doc = doc;
+    this.start = start;
+    this.text = text;
+  }
+}
+
 class Scanner {
   constructor(doc, text, parseExpression) {
     this.doc = doc;
@@ -58,6 +66,7 @@ class Scanner {
   }
 
   nextToken() {
+    this.comment = null;
     eatWhite:
     for (;;) {
       switch (this.c) {
@@ -73,8 +82,11 @@ class Scanner {
           break;
         case '#':
           this.eat();
+          const commentStart = this.pos;
           while (this.c != '<EOF>' && this.c != '\n' && this.c != '\r')
             this.eat();
+          if (!this.onNewLine)
+            this.comment = new Comment(this.doc, commentStart, this.text.slice(commentStart, this.pos));
           break;
         default:
           break eatWhite;
@@ -86,6 +98,7 @@ class Scanner {
         return "EOF"; // Parser will detect error
       if (!this.emittedEOL) {
         this.emittedEOL = true;
+        this.value = this.comment;
         return "EOL";
       }
       if (this.currentIndent() != '') {
@@ -98,6 +111,7 @@ class Scanner {
       if (this.bracketsDepth == 0) {
         if (!this.emittedEOL) {
           this.emittedEOL = true;
+          this.value = this.comment;
           return "EOL";
         }
         let indent = this.text.substring(this.startOfLine, this.tokenStart);
@@ -1218,9 +1232,10 @@ class IfStatement extends Statement {
 }
 
 class AssertStatement extends Statement {
-  constructor(loc, instrLoc, condition) {
+  constructor(loc, instrLoc, condition, comment) {
     super(loc, instrLoc);
     this.condition = condition;
+    this.comment = comment;
   }
   
   check(env) {
@@ -1308,6 +1323,214 @@ class MethodDeclaration extends Declaration {
     callStack.pop();
     push(new OperandBinding(callExpr, result));
   }
+
+  checkProofOutlines() {
+    let env = this.parameterDeclarations.reduceRight((acc, d) => Cons(d.name, acc), Nil);
+    let outlineStart = null;
+    let outlineStartEnv = null;
+
+    for (let i = 0; i < this.bodyBlock.length; i++) {
+      const stmt = this.bodyBlock[i];
+      if (stmt instanceof ExpressionStatement && stmt.expr instanceof AssignmentExpression && stmt.expr.declaration != null)
+        env = Cons(stmt.expr.declaration.name, env);
+      if (stmt instanceof AssertStatement && stmt.comment != null) {
+        if (stmt.comment.text.includes('PRECONDITION')) {
+          if (outlineStart != null)
+            stmt.executionError("Unexpected PRECONDITION tag inside proof outline");
+          outlineStart = i;
+          outlineStartEnv = env;
+        }
+        if (stmt.comment.text.includes('POSTCONDITION')) {
+          if (outlineStart == null)
+            stmt.executionError("POSTCONDITION without PRECONDITION");
+          checkProofOutline(outlineStartEnv, this.bodyBlock.slice(outlineStart, i + 1));
+          outlineStart = null;
+          outlineStartEnv = null;
+        }
+      }
+    }
+  }
+}
+
+function parseProofOutlineExpression(e) {
+  if (e instanceof IntLiteral)
+    return Val(e.loc, +e.value);
+  else if (e instanceof BooleanLiteral)
+    if (e.value)
+      return BinOp(e.loc, Eq, Val(e.loc, 0), Val(e.loc, 0));
+    else
+      return BinOp(e.loc, Eq, Val(e.loc, 0), Val(e.loc, 1));
+  else if (e instanceof VariableExpression)
+    return Var(e.loc, e.name);
+  else if (e instanceof BinaryOperatorExpression) {
+    let op = null;
+    switch (e.operator) {
+      case '+': op = Add; break;
+      case '-': op = Sub; break;
+      case '==': op = Eq; break;
+      case '!=': return Not(e.loc, BinOp(e.loc, Eq, parseProofOutlineExpression(e.leftOperand), parseProofOutlineExpression(e.rightOperand)));
+      case '&&': op = And; break;
+      default:
+        e.executionError("This binary operator is not yet supported in a proof outline");
+    }
+    return BinOp(e.loc, op, parseProofOutlineExpression(e.leftOperand), parseProofOutlineExpression(e.rightOperand));
+  } else if (e instanceof UnaryOperatorExpression) {
+    let op = null;
+    switch (e.operator) {
+      case 'not':
+        return Not(e.loc, parseProofOutlineExpression(e.operand));
+      default:
+        e.executionError("This unary operator is not yet supported in a proof outline");
+    }
+  } else
+    e.executionError("This expression form is not yet supported in a proof outline");
+}
+
+class JustificationScanner {
+  constructor(comment) {
+    this.comment = comment;
+    this.text = this.comment.text;
+    this.pos = -1;
+    this.eat();
+  }
+
+  eat() {
+    this.pos++;
+    this.c = (this.pos == this.text.length ? "<EOF>" : this.text.charAt(this.pos));
+  }
+
+  nextToken0() {
+  eatWhite:
+    for (;;) {
+      switch (this.c) {
+        case ' ':
+        case '\t':
+          this.eat();
+          break;
+        default:
+          break eatWhite;
+      }
+    }
+    this.tokenStart = this.pos;
+    if (this.c == '<EOF>' || this.c == '#')
+      return '<EOF>';
+    if (isDigit(this.c)) {
+      this.eat();
+      while (isDigit(this.c))
+        this.eat();
+      const text = this.text.substring(this.tokenStart, this.pos);
+      const value = +text;
+      if (text != value.toString())
+        this.error("Number too large");
+      this.value = value;
+      return '<NUMBER>';
+    }
+    if (isAlpha(this.c)) {
+      this.eat();
+      while (isAlpha(this.c))
+        this.eat();
+      this.value = null;
+      return this.text.substring(this.tokenStart, this.pos);
+    }
+    throw new LocError({doc: this.comment.doc, start: this.comment.start + this.tokenStart, end: this.comment.start + this.tokenStart + 1}, "Bad character");
+  }
+
+  nextToken() {
+    this.token = this.nextToken0();
+    return this.token;
+  }
+
+  expect(token) {
+    if (this.token != token)
+      error(`'${token}' expected`);
+    const value = this.value;
+    this.nextToken();
+    return value;
+  }
+
+  loc() {
+    return new Loc(this.comment.doc, this.comment.start + this.tokenStart, this.comment.start + this.pos);
+  }
+
+  error(msg) {
+    throw new LocError(this.loc(), msg);
+  }
+}
+
+function expectConjunctIndex(scanner) {
+  const lk = scanner.loc();
+  const k = scanner.expect('<NUMBER>');
+  if (k == 0)
+    throw new LocError(lk, "Conjunct index must be positive");
+  return k - 1;
+}
+
+function parseJustification0(scanner) {
+  switch (scanner.token) {
+    case 'Z': {
+      const l = scanner.loc();
+      scanner.nextToken();
+      if (scanner.token == 'op') {
+        scanner.nextToken();
+        const lk = scanner.loc();
+        const k = expectConjunctIndex(scanner);
+        return JZ_at(l, lk, +k);
+      }
+      return JZ(l);
+    }
+    case 'Herschrijven': {
+      const l = scanner.loc();
+      scanner.nextToken();
+      scanner.expect('met');
+      const lk1 = scanner.loc();
+      const k1 = expectConjunctIndex(scanner);
+      scanner.expect('in');
+      const lk2 = scanner.loc();
+      const k2 = expectConjunctIndex(scanner);
+      return JRewrite(l, lk1, k1, lk2, k2);
+    }
+    default:
+      scanner.error("'Z' or 'Herschrijven' expected");
+  }
+}
+
+function parseJustification(comment) {
+  const scanner = new JustificationScanner(comment);
+  scanner.nextToken();
+  const j = parseJustification0(scanner);
+  if (scanner.token != '<EOF>')
+    scanner.error("End of justification expected");
+  return j;
+}
+
+function parseProofOutline(stmts, i, precededByAssert) {
+  if (stmts.length == i)
+    return Pass(null);
+  const stmt = stmts[i];
+  if (stmt instanceof AssertStatement) {
+    const body = parseProofOutlineExpression(stmt.condition);
+    const justif = precededByAssert ? Some(parseJustification(stmt.comment)) : None;
+    return Seq(Assert(stmt.loc, body, justif), parseProofOutline(stmts, i + 1, true));
+  } else if (stmt instanceof ExpressionStatement && stmt.expr instanceof AssignmentExpression && stmt.expr.op == '=' && stmt.expr.lhs instanceof VariableExpression) {
+    return Seq(Assign(stmt.loc, stmt.expr.lhs.name, parseProofOutlineExpression(stmt.expr.rhs)), parseProofOutline(stmts, i + 1, false));
+  } else if (stmt instanceof WhileStatement) {
+    const cond = parseProofOutlineExpression(stmt.condition);
+    if (!(stmt.body instanceof BlockStatement))
+      stmt.body.executionError("In a proof outline, the body of a loop must be a block.");
+    const body = parseProofOutline(stmt.body.stmts, 0, false);
+    return Seq(While(stmt.loc, cond, body), parseProofOutline(stmts, i + 1, false));
+  } else
+    stmt.executionError("This statement form is not yet supported in a proof outline.");
+}
+
+function checkProofOutline(env, stmts) {
+  const outline = parseProofOutline(stmts, 0, false);
+  if (!stmt_is_well_typed(env, outline))
+    throw new LocError({doc: stmts[0].loc.doc, start: stmts[0].loc.start, end: stmts[stmts.length - 1].loc.end}, "Proof outline is not well-typed");
+  const result = check_proof_outline(outline);
+  if (!isOk(result))
+    throw new LocError(getLoc(result), getMsg(result));
+  nbProofOutlinesChecked++;
 }
 
 class BuiltInMethodDeclaration {
@@ -1321,6 +1544,7 @@ class BuiltInMethodDeclaration {
     let result = await this.body(callExpr, args);
     push(new OperandBinding(callExpr, result));
   }
+  checkProofOutlines() {}
 }
 
 class FieldDeclaration extends Declaration {
@@ -1829,8 +2053,8 @@ class Parser {
         this.next();
         let instrLoc = this.popLoc();
         let condition = this.parseExpression();
-        this.expect('EOL');
-        return new AssertStatement(this.popLoc(), instrLoc, condition);
+        const comment = this.expect('EOL');
+        return new AssertStatement(this.popLoc(), instrLoc, condition, comment);
       }
     }
     let e = this.parseExpression();
@@ -2104,6 +2328,18 @@ function updateMachineView() {
   updateCallStack();
   updateFieldArrows();
   updateButtonStates();
+}
+
+let nbProofOutlinesChecked;
+
+function checkProofOutlines() {
+  handleError(async () => {
+    parseDeclarations();
+    nbProofOutlinesChecked = 0;
+    for (let m in toplevelMethods)
+      toplevelMethods[m].checkProofOutlines();
+    alert(`${nbProofOutlinesChecked} proof outlines checked successfully!`);
+  });
 }
 
 async function executeStatements(step) {

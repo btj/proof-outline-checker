@@ -11,6 +11,36 @@ Inductive is_safe(S: state)(s: stmt)(Q: state -> Prop): Prop :=
   diverges S s ->
   is_safe S s Q.
 
+
+Lemma is_safe_mono S s (Q1 Q2: state -> Prop):
+  is_safe S s Q1 ->
+  (forall S', Q1 S' -> Q2 S') ->
+  is_safe S s Q2.
+Proof.
+  intros.
+  inversion H.
+  - apply terminates_is_safe with (1:=H1).
+    auto.
+  - apply diverges_is_safe; assumption.
+Qed.
+
+Lemma is_safe_strip_pre S l P j s Q:
+  evaluates_to S P (VBool true) ->
+  is_safe S s Q ->
+  is_safe S (Assert l P j;; s) Q.
+Proof.
+  intros.
+  inversion H0.
+  - eapply terminates_is_safe with (S':=S').
+    + apply Seq_terminates_in with (S':=S).
+      * constructor.
+        assumption.
+      * assumption.
+    + assumption.
+  - apply diverges_is_safe.
+    apply Seq_diverges2 with (S':=S); try constructor; assumption.
+Qed.
+
 Definition int_of_value(v: value): Z :=
   match v with
     VInt z => z
@@ -1303,4 +1333,34 @@ Proof.
     intro.
     elim H5.
     exists S'. tauto.
+Qed.
+
+Import ListNotations.
+
+Local Open Scope string_scope.
+
+Definition S0 := fun x =>
+  if string_dec x "n" then Some 5%Z else None.
+  
+Goal is_safe S0 outline1 (fun S => S "r" = S "n").
+Proof.
+  apply is_safe_mono with (Q1:=fun S => evaluates_to S (BinOp (locN 110) Eq (Var (locN 111) "r") (Var (locN 112) "n")) (VBool true)).
+  - apply is_safe_strip_pre.
+    + apply Eq_evaluates_to_true with (v:=VInt 0%Z); constructor.
+    + apply soundness with (E:=["n"]) (l:=locN 0) (P:=True_term (locN 0)) (j:=None).
+      * intro; discriminate.
+      * reflexivity.
+      * reflexivity.
+      * constructor.
+        -- discriminate.
+        -- constructor.
+      * apply Eq_evaluates_to_true with (v:=VInt 0%Z); constructor.
+  - intros.
+    inversion H.
+    subst.
+    inversion H2.
+    subst.
+    inversion H4.
+    subst.
+    congruence.
 Qed.
