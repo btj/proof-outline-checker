@@ -156,8 +156,8 @@ class Scanner {
 }
 
 class LocalBinding {
-  constructor(name, value) {
-    this.name = name;
+  constructor(declaration, value) {
+    this.declaration = declaration;
     this.value = value;
   }
   
@@ -166,7 +166,7 @@ class LocalBinding {
   }
 
   getNameHTML() {
-    return this.name;
+    return this.declaration.type.resolve().toHTML() + " " + this.declaration.name;
   }
 }
 
@@ -469,14 +469,20 @@ class AssignmentExpression extends Expression {
     this.lhs = lhs;
     this.op = op;
     this.rhs = rhs;
+    this.declaration = null;
   }
 
   check(env) {
     if (this.op == '=') {
+      if (this.lhs instanceof VariableExpression && env.tryLookup(this.lhs.name) == null) {
+        this.declaration = new VariableDeclarationStatement(this.loc, this.instrLoc, new ImplicitTypeExpression(), this.lhs.loc, this.lhs.name, this.rhs);
+        this.declaration.check(env);
+        return voidType;
+      }
       let t = this.lhs.check_(env);
       this.rhs.checkAgainst(env, t);
       return voidType;
-    } else  {
+    } else {
       this.lhs.checkAgainst(env, intType);
       this.rhs.checkAgainst(env, intType);
       return voidType;
@@ -503,6 +509,12 @@ class AssignmentExpression extends Expression {
   }
   
   async evaluate(env) {
+    if (this.declaration) {
+      await this.declaration.execute(env);
+      this.push(new OperandBinding(this, 'void'));
+      return;
+    }
+
     let bindingThunk = await this.lhs.evaluateBinding(env);
     if (this.op != '=')
       this.push(bindingThunk(peek).value);
@@ -1005,7 +1017,7 @@ class ImplicitTypeExpression extends ASTNode {
     super(null);
   }
   resolve() {
-    return anyType;
+    return this.type = intType;
   }
 }
 
@@ -1063,7 +1075,7 @@ class VariableDeclarationStatement extends Statement {
     if (env.tryLookup(this.name) != null)
       throw new ExecutionError(this.nameLoc, "Variable '" + this.name + "' already exists in this scope.");
     this.init.checkAgainst(env, this.type.type);
-    env.bindings[this.name] = new LocalBinding(this.name, this.type.type);
+    env.bindings[this.name] = new LocalBinding(this, this.type.type);
   }
   
   async execute(env) {
@@ -1072,7 +1084,7 @@ class VariableDeclarationStatement extends Statement {
     await this.init.evaluate(env);
     await this.breakpoint();
     let [v] = pop(1);
-    env.bindings[this.name] = new LocalBinding(this.name, v);
+    env.bindings[this.name] = new LocalBinding(this, v);
   }
 }
 
@@ -1268,9 +1280,9 @@ class MethodDeclaration extends Declaration {
     for (let p of this.parameterDeclarations) {
       if (has(env.bindings, p.name))
         this.executionError("Duplicate parameter name");
-      env.bindings[p.name] = new LocalBinding(p.name, p.type.type);
+      env.bindings[p.name] = new LocalBinding(p, p.type.type);
     }
-    env.bindings["#result"] = new LocalBinding("#result", this.returnType.type);
+    env.bindings["#result"] = new LocalBinding(this, this.returnType.type);
     for (let stmt of this.bodyBlock)
       stmt.check(env);
   }
@@ -1282,7 +1294,7 @@ class MethodDeclaration extends Declaration {
     let stackFrame = new StackFrame(this.name, env);
     callStack.push(stackFrame);
     for (let i = 0; i < args.length; i++)
-      env.bindings[this.parameterDeclarations[i].name] = new LocalBinding(this.parameterDeclarations[i].name, args[i]);
+      env.bindings[this.parameterDeclarations[i].name] = new LocalBinding(this.parameterDeclarations[i], args[i]);
     let result;
     for (let stmt of this.bodyBlock) {
       result = await stmt.execute(env);
@@ -1303,6 +1315,8 @@ class BuiltInMethodDeclaration {
     this.parameterDeclarations = paramNames;
     this.body = body;
   }
+  enter() {}
+  check() {}
   async call(callExpr, args) {
     let result = await this.body(callExpr, args);
     push(new OperandBinding(callExpr, result));
@@ -1519,7 +1533,7 @@ class Parser {
         let op = this.token;
         this.next();
         let instrLoc = this.popLoc();
-        let e = this.parsePostfixExpression();
+        let e = this.parseRelationalExpression();
         return new UnaryOperatorExpression(this.popLoc(), instrLoc, op, e);
       }
       default:
@@ -1933,12 +1947,12 @@ function checkDeclarations(declarations) {
       toplevelMethods[declaration.name] = declaration;
     }
   }
-  // for (let c in classes)
-  //   classes[c].enter();
-  // for (let m in toplevelMethods)
-  //   toplevelMethods[m].enter();
-  // for (let m in toplevelMethods)
-  //   toplevelMethods[m].check();
+  for (let c in classes)
+    classes[c].enter();
+  for (let m in toplevelMethods)
+    toplevelMethods[m].enter();
+  for (let m in toplevelMethods)
+    toplevelMethods[m].check();
 }
 
 let variablesTable = document.getElementById('variables');
@@ -2182,6 +2196,7 @@ function parseDeclarations() {
   let text = declarationsEditor.getValue();
   if (lastCheckedDeclarations != null && lastCheckedDeclarations == text)
     return;
+  lastCheckedDeclarations = null;
   resetMachine();
   updateMachineView();
   let parser = new Parser(declarationsEditor, text);
