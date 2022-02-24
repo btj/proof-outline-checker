@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>PyLearner</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.51.0/lib/codemirror.css">
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.51.0/lib/codemirror.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.51.0/addon/edit/matchbrackets.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.51.0/addon/hint/show-hint.css">
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.51.0/addon/hint/show-hint.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/codemirror@5.51.0/mode/python/python.js"></script>
+    <style>
+    body {font-family: Arial, Helvetica, sans-serif}
+    .result { font-style: italic; color: blue }
+    #callstack { background-color: lightgreen; border: 2px solid black; border-collapse: collapse }
+    .stackframe-title { text-align: center; border-top: 2px solid black; font-family: monospace; padding: 2px }
+    .stack-variable-name { text-align: right; font-family: monospace; padding: 2px 2px 2px 2px }
+    .keyword { font-family: monospace; font-weight: bold }
+    .stack-value-td { padding: 2px 2px 1.5px 2px }
+    .stack-value-div { padding: 1px 1px 1px 1px; background-color: white }
+    .object-table { background-color: #ffcccb; border: 2px solid black; border-radius: 5px; position: absolute }
+    .object-title-td { text-align: center; font-size: small }
+    .code { font-family: monospace; font-size: medium }
+    .field-name { text-align: right; font-family: monospace }
+    .field-value { background-color: white }
+    .CodeMirror {border: 1px solid black;}
+    .lint-error {font-family: arial; font-size: 70%; background: #ffa; color: #a00; padding: 2px 5px 3px; }
+    .lint-error-icon {color: white; background-color: red; font-weight: bold; border-radius: 50%; padding: 0 3px; margin-right: 7px;}
+    .syntax-error {background-color: #ff8080}
+    .current-instruction {background-color: lightgreen}
+    </style>
+  </head>
+  <body style="background: lightgray">
+    <table width="100%"><tr><td width="*1"><h1>PyLearner</h1></td><td style="text-align: center">Examples: <select id="examples"></select></td><td style="text-align: right"><a href="exercises.html">Exercises</a></td></tr></table>
+    <table width="100%" style="table-layout: fixed"><tr>
+    <td width="50%" style="vertical-align: top">
+      <p><b>Declarations:</b></p>
+      <p><textarea id="declarations"></textarea></p>
+      <p><b>Statements:</b>
+        <button id="executeButton" onClick="executeStatements(false)">Execute (Ctrl+Enter)</button>
+        <button id="resetAndExecuteButton" onClick="resetAndExecute()">Reset machine and execute (Shift+Ctrl+Enter)</button>
+        <button id="stepThroughStatementsButton" onclick="executeStatements(true)">Step through</button></p>
+      <p><textarea id="statements"></textarea></p>
+      <p><b>Expression:</b> <button id="evaluateButton" onClick="evaluateExpression()">Evaluate (Ctrl+Enter)</button> <button id="stepThroughExpressionButton" onclick="evaluateExpression(true)">Step through</button></p>
+      <p><textarea id="expression"></textarea></p>
+      <p><b>Results:</b> <button onClick="resultsEditor.setValue('')">Clear</button></p>
+      <p><textarea id="results"></textarea></p>
+    </td>
+    <td id="machine" height="100%" style="vertical-align: top; padding-left: 20px">
+      <p>
+        <button id="stepButton" onclick="step()" disabled>Step</button>
+        <button id="smallStepButton" onclick="smallStep()" disabled>Small step</button>
+        <button id="stepOverButton" onclick="stepOver()" disabled>Step over</button>
+        <button id="stepOutButton" onClick="stepOut()" disabled>Step out</button>
+        <button id="continueButton" onclick="continue_()" disabled>Continue</button>
+        <button onclick="reset()">Reset (Ctrl+Esc)</button></p>
+      <div style="position: relative; display: flex; flex-direction: row; align-items: stretch">
+            <table id="callstack" style="background-color: lightgreen; border: 2px solid black; border-collapse: collapse">
+            </table>
+            <div id="heap" style="position: relative; flex-grow: 1; margin-left: 40px">
+            <!--
+            <table id="to" class="object-table">
+              <tr><td colspan="2" class="object-title-td"><span class="code" ><span class="keyword">int</span>[]</span> (id=1) (length=4)</td></tr>
+              <tr><td class="field-name"><span class="keyword">int</span> [0]</td><td class="field-value">50</td></tr>
+              <tr><td class="field-name">int [1]</td><td class="field-value">50</td></tr>
+            </table>
+            -->
+            </div>
+      <svg id="arrows-svg" style="position: absolute; left: 0; top: 0; pointer-events: none">
+        <defs>
+          <!-- arrowhead marker definition -->
+          <marker id="arrowhead" viewBox="0 0 10 10" refX="10" refY="5"
+              markerWidth="8" markerHeight="12"
+              orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" />
+          </marker>
+        </defs>
+
+        <!--
+        <line id="arrow" x1="0" y1="0" x2="200" y2="200" style="stroke:rgb(0,0,0);stroke-width:1"
+           marker-end="url(#arrowhead)" />
+        -->
+      </svg>
+    </div>
+    </td>
+    </tr>
+    </table>
+  <script>
+    var declarationsEditor = CodeMirror.fromTextArea(document.getElementById('declarations'), {
+      lineNumbers: false,
+      matchBrackets: true,
+      mode: 'text/x-python'
+    });
+    declarationsEditor.setSize("100%", "15em");
+    declarationsEditor.on('changes', () => clearErrorWidgets());
+    var statementsEditor = CodeMirror.fromTextArea(document.getElementById('statements'), {
+      lineNumbers: false,
+      matchBrackets: true,
+      mode: 'text/x-python'
+    });
+    statementsEditor.on('changes', () => clearErrorWidgets());
+    statementsEditor.setSize("100%", "10em");
+    statementsEditor.on('keydown', (editor, event) => {
+      if (event.keyCode == 13 && event.ctrlKey) {
+        event.preventDefault();
+        if (event.shiftKey)
+          resetAndExecute();
+        else
+          executeStatements(false);
+      }
+    });
+    document.addEventListener('keydown', event => {
+      if (event.keyCode == 27 && event.ctrlKey) {
+        event.preventDefault();
+        reset();
+      }
+    });
+    var expressionEditor = CodeMirror.fromTextArea(document.getElementById('expression'), {
+      lineNumbers: false,
+      matchBrackets: true,
+      mode: 'text/x-python'
+    });
+    expressionEditor.on('changes', () => clearErrorWidgets());
+    expressionEditor.setSize("100%", "3em");
+    var resultsEditor = CodeMirror.fromTextArea(document.getElementById('results'), {
+      matchBrackets: true,
+      mode: 'text/plain'
+    });
+    resultsEditor.setSize("100%", "10em");
+    expressionEditor.on('keydown', (editor, event) => {
+      if (event.keyCode == 13 && event.ctrlKey) {
+        event.preventDefault();
+        evaluateExpression(false);
+      }
+    });
+  </script>
+      <!-- script>
+      let machine = document.getElementById('arrows-svg');
+      let arrow = document.getElementById('arrow');
+      let from = document.getElementById('from');
+      let to = document.getElementById('to');
+      let fromRects = from.getClientRects();
+      console.log(fromRects);
+      let toRects = to.getClientRects();
+      console.log(toRects);
+      let machineRects = machine.getClientRects();
+      console.log(machineRects);
+      arrow.x1.baseVal.value = (fromRects[0].left + fromRects[0].right) / 2 - machineRects[0].left;
+      arrow.y1.baseVal.value = (fromRects[0].top + fromRects[0].bottom) / 2 - machineRects[0].top;
+      arrow.x2.baseVal.value = toRects[0].left - machineRects[0].left;
+      arrow.y2.baseVal.value = toRects[0].top - machineRects[0].top;
+      </script -->
+  <script src="pylearner.js"></script>
+  </body>
+</html>
