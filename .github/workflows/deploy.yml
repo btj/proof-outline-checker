@@ -16,7 +16,8 @@ jobs:
     - name: Build
       run: |
         docker pull bartjacobs/coq-and-js_of_ocaml
-        docker run --rm --user root -v `pwd`:/workdir bartjacobs/coq-and-js_of_ocaml bash -c 'cd /workdir && . build.sh'
+        chmod -R ugo+rw .
+        docker run --rm -v `pwd`:/workdir bartjacobs/coq-and-js_of_ocaml bash -c 'cd /workdir && . build.sh'
         mkdir dist
         cp index.html *.js dist
         cd dist
