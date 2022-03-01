@@ -1,0 +1,34 @@
+name: Build and deploy
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Build
+      run: |
+        set +x +e
+        docker pull bartjacobs/coq-and-js_of_ocaml
+        docker run --rm -it -v `pwd`:/workdir bartjacobs/coq-and-js_of_ocaml bash -c 'cd /workdir && . build.sh'
+        mkdir dist
+        cp index.html *.js dist
+        cd dist
+        git init
+        git config --global user.name "$GITHUB_REPOSITORY GitHub Actions runner"
+        git config --global user.email "no@email"
+        git add .
+        git commit -m "Built from $GITHUB_SHA"
+        git remote add origin $GITHUB_SERVER_URL/$GITHUB_REPOSITORY
+        git checkout -b gh-pages
+        gh auth setup-git
+        git push -f origin gh-pages
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
