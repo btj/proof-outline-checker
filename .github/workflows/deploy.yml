@@ -17,7 +17,7 @@ jobs:
       run: |
         set +x +e
         docker pull bartjacobs/coq-and-js_of_ocaml
-        docker run --rm -it -v `pwd`:/workdir bartjacobs/coq-and-js_of_ocaml bash -c 'cd /workdir && . build.sh'
+        docker run --rm -v `pwd`:/workdir bartjacobs/coq-and-js_of_ocaml bash -c 'cd /workdir && . build.sh'
         mkdir dist
         cp index.html *.js dist
         cd dist
