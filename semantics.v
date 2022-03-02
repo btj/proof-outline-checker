@@ -7,20 +7,26 @@ Inductive value :=
 | VBool(b: bool)
 .
 
+Definition eval_binop op v1 v2 :=
+  match op, v1, v2 with
+    Add, VInt z1, VInt z2 => Some (VInt (z1 + z2))
+  | Sub, VInt z1, VInt z2 => Some (VInt (z1 - z2))
+  | And, VBool b1, VBool b2 => Some (VBool (b1 && b2))
+  | Le, VInt z1, VInt z2 => Some (VBool (Z.leb z1 z2))
+  | _, _, _ => None
+  end.
+
 Inductive evaluates_to(S: state): term -> value -> Prop :=
 | Val_evaluates_to l z:
   evaluates_to S (Val l z) (VInt z)
 | Var_evaluates_to l x z:
   S x = Some z ->
   evaluates_to S (Var l x) (VInt z)
-| Add_evaluates_to l t1 t2 z1 z2:
-  evaluates_to S t1 (VInt z1) ->
-  evaluates_to S t2 (VInt z2) ->
-  evaluates_to S (BinOp l Add t1 t2) (VInt (z1 + z2))
-| Sub_evaluates_to l t1 t2 z1 z2:
-  evaluates_to S t1 (VInt z1) ->
-  evaluates_to S t2 (VInt z2) ->
-  evaluates_to S (BinOp l Sub t1 t2) (VInt (z1 - z2))
+| BinOp_evaluates_to l op t1 t2 v1 v2 v:
+  evaluates_to S t1 v1 ->
+  evaluates_to S t2 v2 ->
+  eval_binop op v1 v2 = Some v ->
+  evaluates_to S (BinOp l op t1 t2) v
 | Eq_evaluates_to_true l t1 t2 v:
   evaluates_to S t1 v ->
   evaluates_to S t2 v ->
@@ -30,10 +36,6 @@ Inductive evaluates_to(S: state): term -> value -> Prop :=
   evaluates_to S t2 v2 ->
   v1 <> v2 ->
   evaluates_to S (BinOp l Eq t1 t2) (VBool false)
-| And_evaluates_to l t1 b1 t2 b2:
-  evaluates_to S t1 (VBool b1) ->
-  evaluates_to S t2 (VBool b2) ->
-  evaluates_to S (BinOp l And t1 t2) (VBool (b1 && b2))
 | Not_evaluates_to l t b:
   evaluates_to S t (VBool b) ->
   evaluates_to S (Not l t) (VBool (negb b))

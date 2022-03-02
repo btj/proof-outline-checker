@@ -33,7 +33,7 @@ Extract Constant locN => "(fun _ -> failwith ""Not implemented"")".
 
 Definition var := string.
 
-Inductive binop := Add | Sub | Eq | And.
+Inductive binop := Add | Sub | Eq | Le | And.
 Inductive term :=
 | Val(l: loc)(z: Z)
 | Var(l: loc)(x: var)
@@ -92,4 +92,3 @@ Definition outline1: stmt :=
   Assert (locN 109) (BinOp (locN 110) Eq (Var (locN 111) "r") (Var (locN 112) "n")) (Some (JZ_at (locN 113) (locN 114) 0));;
   Pass (locN 115)
 .
-

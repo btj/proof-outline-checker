@@ -1,3 +1,4 @@
+type _bool = bool
 open Proof_checker
 open Js_of_ocaml
 
@@ -62,30 +63,31 @@ let rec nat_of_int n =
 let _ =
   Js.export_all
     begin object%js
-      val _Add = Add
-      val _Sub = Sub
-      val _Eq = Eq
-      val _And = And
-      val _Nil = Nil
-      val _None = None
-      method _Cons h t = Cons (coq_string_of_string (Js.to_string h), t)
-      method _Some v = Some v
-      method _Val l n = Val (l, z_of_int n)
-      method _Var l s = Var (l, coq_string_of_string (Js.to_string s))
-      method _BinOp l op t1 t2 = BinOp (l, op, t1, t2)
-      method _Not l t = Not (l, t)
-      method _JZ l = JZ l
-      method _JZ_at_ l lk k = JZ_at (l, lk, nat_of_int k)
-      method _JRewrite l lk1 k1 lk2 k2 = JRewrite (l, lk1, nat_of_int k1, lk2, nat_of_int k2)
-      method _Assert l t j = Assert (l, t, j)
-      method _Assign l x t = Assign (l, coq_string_of_string (Js.to_string x), t)
-      method _If l t s1 s2 = If (l, t, s1, s2)
-      method _While l t s = While (l, t, s)
-      method _Seq s1 s2 = Seq (s1, s2)
-      method _Pass l = Pass l
-      method stmt_is_well_typed_ e s = Js.bool (Proof_checker.post_env_of_stmt e s <> None)
-      method check_proof_outline_ s = Proof_checker.check_proof_outline s
-      method isOk r = Js.bool (match r with Ok _ -> true | _ -> false)
-      method getLoc r = let Error (l, msg) = r in l
-      method getMsg r = let Error (l, msg) = r in Js.string (string_of_coq_string msg)
+      val _Add: binop = Add
+      val _Sub: binop = Sub
+      val _Eq: binop = Eq0
+      val _Le: binop = Le
+      val _And: binop = And
+      val _Nil: env = Nil
+      val _None: justif option = None
+      method _Cons (h: Js.js_string Js.t) (t: env): env = Cons (coq_string_of_string (Js.to_string h), t)
+      method _Some (v: justif): justif option = Some v
+      method _Val (l: loc) (n: int): term = Val (l, z_of_int n)
+      method _Var (l: loc) (s: Js.js_string Js.t): term = Var (l, coq_string_of_string (Js.to_string s))
+      method _BinOp (l: loc) (op: binop) (t1: term) (t2: term): term = BinOp (l, op, t1, t2)
+      method _Not (l: loc) (t: term): term = Not (l, t)
+      method _JZ (l: loc): justif = JZ l
+      method _JZ_at_ (l: loc) (lk: loc) (k: int): justif = JZ_at (l, lk, nat_of_int k)
+      method _JRewrite (l: loc) (lk1: loc) (k1: int) (lk2: loc) (k2: int): justif = JRewrite (l, lk1, nat_of_int k1, lk2, nat_of_int k2)
+      method _Assert (l: loc) (t: term) (j: justif option): stmt = Assert (l, t, j)
+      method _Assign (l: loc) (x: Js.js_string Js.t) (t: term): stmt = Assign (l, coq_string_of_string (Js.to_string x), t)
+      method _If (l: loc) (t: term) (s1: stmt) (s2: stmt): stmt = If (l, t, s1, s2)
+      method _While (l: loc) (t: term) (s: stmt): stmt = While (l, t, s)
+      method _Seq (s1: stmt) (s2: stmt): stmt = Seq (s1, s2)
+      method _Pass (l: loc): stmt = Pass l
+      method stmt_is_well_typed_ (e: env) (s: stmt): _bool Js.t = Js.bool (Proof_checker.post_env_of_stmt e s <> None)
+      method check_proof_outline_ (s: stmt): (unit0, (loc, string) prod) result = Proof_checker.check_proof_outline s
+      method isOk (r: (unit0, (loc, string) prod) result): _bool Js.t = Js.bool (match r with Ok _ -> true | _ -> false)
+      method getLoc (r: (unit0, (loc, string) prod) result): loc = let Error (Pair (l, msg)) = r in l
+      method getMsg (r: (unit0, (loc, string) prod) result): Js.js_string Js.t = let Error (Pair (l, msg)) = r in Js.string (string_of_coq_string msg)
     end end

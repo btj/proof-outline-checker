@@ -114,6 +114,14 @@ Definition is_Z_tautology(P: term): bool :=
       [] => true
     | _ => false
     end
+  | BinOp l Le t1 t2 =>
+    let p1 := poly_of t1 in
+    let p2 := poly_of t2 in
+    match poly_subtract p2 p1 with
+      [] => true
+    | [(z, Val _ 1)] => Z.leb 0 z
+    | _ => false
+    end
   | _ => false
   end.
 
@@ -139,6 +147,44 @@ Definition is_Z_entailment0(H C: term): bool :=
         | Some zH0 =>
           match poly_subtract (poly_scale zH0 pC) (poly_scale zC0 pH) with
             [] => true
+          | _ => false
+          end
+        end
+      | _ => false
+      end
+    end
+  | BinOp lC Le t1 t2 =>
+    let pC := poly_subtract (poly_of t2) (poly_of t1) in
+    let Cconst :=
+      match poly_lookup (Val lC 1) pC with
+        None => 0%Z
+      | Some z => z
+      end
+    in
+    let pC' := poly_add_term (-Cconst) (Val lC 1) pC in
+    match pC' with
+      [] => Z.leb 0 Cconst
+    | (zC0, tC0)::pC0 =>
+      match H with
+        BinOp lH Eq t1 t2 =>
+        let pH := poly_subtract (poly_of t1) (poly_of t2) in
+        match poly_lookup tC0 pH with
+          None => false
+        | Some zH0 =>
+          match poly_subtract (poly_scale zH0 pC) (poly_scale zC0 pH) with
+            [] => true
+          | [(z, Val _ 1)] => Z.leb 0 z
+          | _ => false
+          end
+        end
+      | BinOp lJ Le t1 t2 =>
+        let pH := poly_subtract (poly_of t2) (poly_of t1) in
+        match poly_lookup tC0 pH with
+          None => false
+        | Some zH0 =>
+          match poly_subtract (poly_scale zH0 pC) (poly_scale zC0 pH) with
+            [] => true
+          | [(z, Val _ 1)] => Z.leb 0 z
           | _ => false
           end
         end

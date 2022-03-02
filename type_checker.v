@@ -25,7 +25,7 @@ Fixpoint type_of(t: term): option type :=
       Some TInt, Some TInt => Some TInt
     | _, _ => None
     end
-  | BinOp l Eq t1 t2 =>
+  | BinOp l (Eq|Le) t1 t2 =>
     match type_of t1, type_of t2 with
       Some TInt, Some TInt => Some TBool
     | _, _ => None

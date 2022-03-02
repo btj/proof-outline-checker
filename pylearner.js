@@ -1363,17 +1363,23 @@ function parseProofOutlineExpression(e) {
   else if (e instanceof VariableExpression)
     return Var(e.loc, e.name);
   else if (e instanceof BinaryOperatorExpression) {
+    const t1 = parseProofOutlineExpression(e.leftOperand);
+    const t2 = parseProofOutlineExpression(e.rightOperand);
     let op = null;
     switch (e.operator) {
       case '+': op = Add; break;
       case '-': op = Sub; break;
       case '==': op = Eq; break;
-      case '!=': return Not(e.loc, BinOp(e.loc, Eq, parseProofOutlineExpression(e.leftOperand), parseProofOutlineExpression(e.rightOperand)));
+      case '<=': op = Le; break;
+      case '>=': return BinOp(e.loc, Le, t2, t1);
+      case '<': return BinOp(e.loc, Le, BinOp(e.loc, Add, t1, Val(e.loc, 1)), t2);
+      case '>': return BinOp(e.loc, Le, BinOp(e.loc, Add, t2, Val(e.loc, 1)), t1);
+      case '!=': return Not(e.loc, BinOp(e.loc, Eq, t1, t2));
       case '&&': op = And; break;
       default:
         e.executionError("This binary operator is not yet supported in a proof outline");
     }
-    return BinOp(e.loc, op, parseProofOutlineExpression(e.leftOperand), parseProofOutlineExpression(e.rightOperand));
+    return BinOp(e.loc, op, t1, t2);
   } else if (e instanceof UnaryOperatorExpression) {
     let op = null;
     switch (e.operator) {
@@ -2600,11 +2606,11 @@ function updateButtonStates() {
 }
 
 examples = [{
-  title: 'Copy a number',
+  title: 'Copy a number (partial correctness)',
   declarations:
 `def copy(n):
 
-    assert True # PRECONDITION
+    assert True # PRECONDITION PARTIAL_CORRECTNESS
     assert 0 == n - n # Z
     i = n
     assert 0 == n - i
@@ -2619,6 +2625,73 @@ examples = [{
         assert r == n - i
     assert r == n - i and not i != 0
     assert r == n - i and i == 0 # Z op 2
+    assert r == n - 0 # Herschrijven met 2 in 1
+    assert r == n # Z op 1 # POSTCONDITION
+
+    return r
+`,
+  statements:
+`assert copy(2) == 2
+assert copy(7) == 7`,
+  expression: `copy(3)`
+}, {
+  title: 'Copy a number (alternative) (partial correctness)',
+  declarations:
+`# Wet LeAntisym: x <= y and y <= x ==> x == y
+
+def copy(n):
+
+    assert 0 <= n # PRECONDITION PARTIAL_CORRECTNESS
+    assert 0 <= n and 0 == n - n # Z
+    i = n
+    assert 0 <= i and 0 == n - i
+    r = 0
+    assert 0 <= i and r == n - i
+    while 0 < i:
+        assert 0 <= i and r == n - i and 0 < i
+        assert 0 <= i - 1 and r + 1 == n - (i - 1) # Z op 3 of Z of 2
+        i = i - 1
+        assert 0 <= i and r + 1 == n - i
+        r = r + 1
+        assert 0 <= i and r == n - i
+    assert 0 <= i and r == n - i and not 0 < i
+    assert 0 <= i and r == n - i and i <= 0 # Z op 3
+    assert r == n - i and i == 0 # LeAntisym op 3 en 1
+    assert r == n - 0 # Herschrijven met 2 in 1
+    assert r == n # Z op 1 # POSTCONDITION
+
+    return r
+`,
+  statements:
+`assert copy(2) == 2
+assert copy(7) == 7`,
+  expression: `copy(3)`
+}, {
+  title: 'Copy a number (total correctness)',
+  declarations:
+`# Wet LeAntisym: x <= y and y <= x ==> x == y
+
+def copy(n):
+
+    assert 0 <= n # PRECONDITION TOTAL_CORRECTNESS
+    assert 0 <= n and 0 == n - n # Z
+    i = n
+    assert 0 <= i and 0 == n - i
+    r = 0
+    assert 0 <= i and r == n - i
+    while 0 < i:
+        oude_variant = i
+        assert 0 <= i and r == n - i and 0 < i and i == oude_variant
+        assert 0 < i and r + 1 == n - (i - 1) and i == oude_variant # Z op 2
+        assert r + 1 == n - (i - 1) and 0 <= i - 1 < oude_variant # Z op 1 of Z op 2
+        i = i - 1
+        assert r + 1 == n - i and 0 <= i < oude_variant
+        r = r + 1
+        assert r == n - i and 0 <= i < oude_variant
+        assert 0 <= i and r == n - i and 0 <= i < oude_variant
+    assert 0 <= i and r == n - i and not 0 < i
+    assert 0 <= i and r == n - i and i <= 0 # Z op 3
+    assert r == n - i and 0 == i # LeAntisym op 1 en 3
     assert r == n - 0 # Herschrijven met 2 in 1
     assert r == n # Z op 1 # POSTCONDITION
 
