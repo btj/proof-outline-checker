@@ -5,10 +5,13 @@ COQ_OPTS=-R . proofchecker
 proof_outlines.vo: proof_outlines.v
 	coqc $(COQ_OPTS) proof_outlines.v
 
+normalizer.vo: proof_outlines.vo normalizer.v
+	coqc $(COQ_OPTS) normalizer.v
+
 type_checker.vo: type_checker.v proof_outlines.vo
 	coqc $(COQ_OPTS) type_checker.v
 
-proof_checker.vo: proof_checker.v proof_outlines.vo
+proof_checker.vo: proof_checker.v normalizer.vo
 	coqc $(COQ_OPTS) proof_checker.v
 
 proof_checker.ml: type_checker.vo proof_checker.vo

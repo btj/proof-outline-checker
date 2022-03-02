@@ -1,5 +1,5 @@
 Require Export List.
-Require Export proof_outlines.
+Require Export normalizer.
 
 Export ListNotations.
 
@@ -56,11 +56,7 @@ Proof.
     constructor; assumption.
 Qed.
 
-Fixpoint conjuncts_of(P: term): list term :=
-  match P with
-    BinOp l And P1 P2 => conjuncts_of P1 ++ conjuncts_of P2
-  | P => [P]
-  end.
+Definition term_equivb' t1 t2 := term_equivb (normalize t1) (normalize t2).
 
 Definition poly := list (Z * term).
 
@@ -288,11 +284,11 @@ Fixpoint check_proof_outline(s: stmt): result unit (loc * string) :=
     else
       error (laP, "Assignment precondition does not match postcondition with RHS substituted for LHS")
   | Assert laInv Inv _ ;; (While lw C ((Assert laP P _ ;; _) as body)) ;; ((Assert laQ Q _ ;; _) as s) =>
-    if term_equivb P (BinOp laInv And Inv C) then
+    if term_equivb' P (BinOp laInv And Inv C) then
       if ends_with_assert body Inv then
         match check_proof_outline body with
           ok _ =>
-          if term_equivb Q (BinOp laInv And Inv (Not laInv C)) then
+          if term_equivb' Q (BinOp laInv And Inv (Not laInv C)) then
             check_proof_outline s
           else
             error (laQ, "Loop postcondition does not match conjunction of invariant and negation of condition")

@@ -2658,7 +2658,7 @@ def copy(n):
     assert 0 <= i and r == n - i
     while 0 < i:
         assert 0 <= i and r == n - i and 0 < i
-        assert 0 <= i - 1 and r + 1 == n - (i - 1) # Z op 3 of Z of 2
+        assert 0 <= i - 1 and r + 1 == n - (i - 1) # Z op 3 of Z op 2
         i = i - 1
         assert 0 <= i and r + 1 == n - i
         r = r + 1
