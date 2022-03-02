@@ -18,6 +18,7 @@ jobs:
         docker pull bartjacobs/coq-and-js_of_ocaml
         chmod -R ugo+rw .
         docker run --rm -v `pwd`:/workdir bartjacobs/coq-and-js_of_ocaml bash -c 'cd /workdir && make'
+        node test.js
         mkdir dist
         cp index.html *.js dist
         cd dist
