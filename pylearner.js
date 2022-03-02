@@ -2662,8 +2662,8 @@ def copy(n):
         assert 0 <= i and r + 1 == n - i
         r = r + 1
         assert 0 <= i and r == n - i
-    assert 0 <= i and r == n - i and not 0 < i # POSTCONDITION
-    assert 0 <= i and r == n - i and i <= 0 # Z op 3
+    assert 0 <= i and r == n - i and not 0 < i
+    assert 0 <= i and r == n - i and i <= 0 # Z op 3 # POSTCONDITION
     assert r == n - i and i == 0 # LeAntisym op 3 en 1
     assert r == n - 0 # Herschrijven met 2 in 1
     assert r == n # Z op 1 

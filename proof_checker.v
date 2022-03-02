@@ -128,14 +128,21 @@ Proof.
   reflexivity.
 Qed.
 
-Definition is_Z_entailment0(H C: term): bool :=
-  match C with
+Fixpoint normalize_eq(t: term): term :=
+  match t with
+    Not l1 (Not l2 t) => normalize_eq t
+  | Not l1 (BinOp l2 Le t1 t2) => BinOp l2 Le (BinOp l2 Add t2 (Val l2 1)) t1
+  | _ => t
+  end.
+
+Definition is_Z_entailment(H C: term): bool :=
+  match normalize_eq C with
     BinOp lC Eq t1 t2 =>
     let pC := poly_subtract (poly_of t1) (poly_of t2) in
     match pC with
       [] => true
     | (zC0, tC0)::pC0 =>
-      match H with
+      match normalize_eq H with
         BinOp lH Eq t1 t2 =>
         let pH := poly_subtract (poly_of t1) (poly_of t2) in
         match poly_lookup tC0 pH with
@@ -161,7 +168,7 @@ Definition is_Z_entailment0(H C: term): bool :=
     match pC' with
       [] => Z.leb 0 Cconst
     | (zC0, tC0)::pC0 =>
-      match H with
+      match normalize_eq H with
         BinOp lH Eq t1 t2 =>
         let pH := poly_subtract (poly_of t1) (poly_of t2) in
         match poly_lookup tC0 pH with
@@ -189,14 +196,6 @@ Definition is_Z_entailment0(H C: term): bool :=
     end
   | _ => false
   end.
-
-Fixpoint is_Z_entailment1(H_negated: bool)(H C: term): bool :=
-  match H with
-  | Not l H => is_Z_entailment1 (negb H_negated) H C
-  | _ => if H_negated then false else is_Z_entailment0 H C
-  end.
-
-Definition is_Z_entailment(H C: term): bool := is_Z_entailment1 false H C.
 
 Goal is_Z_entailment
   (BinOp (locN 0) Eq (Var (locN 1) "r") (BinOp (locN 2) Sub (Var (locN 3) "n") (Var (locN 4) "i")))
