@@ -224,8 +224,7 @@ Fixpoint rewrites(lhs rhs t: term): list term :=
     | t => [t]
     end.
 
-Definition is_valid_conjunct_entailment(Hs: list term)(C: term)(j: justif): bool :=
-  if existsb (term_equivb C) Hs then true else
+Definition is_valid_conjunct_entailment0(Hs: list term)(C: term)(j: justif): bool :=
   match j with
     JZ l => is_Z_tautology C
   | JZ_at l lk k =>
@@ -245,10 +244,14 @@ Definition is_valid_conjunct_entailment(Hs: list term)(C: term)(j: justif): bool
     end
   end.
 
-Definition is_valid_entailment(P P': term)(j: justif): bool :=
+Definition is_valid_conjunct_entailment(Hs: list term)(C: term)(js: list justif): bool :=
+  existsb (term_equivb C) Hs ||
+  existsb (is_valid_conjunct_entailment0 Hs C) js.
+
+Definition is_valid_entailment(P P': term)(js: list justif): bool :=
   let P_conjuncts := conjuncts_of P in
   let P'_conjuncts := conjuncts_of P' in
-  forallb (fun P0 => is_valid_conjunct_entailment P_conjuncts P0 j) P'_conjuncts .
+  forallb (fun P0 => is_valid_conjunct_entailment P_conjuncts P0 js) P'_conjuncts .
 
 Fixpoint subst(x: var)(t: term)(t0: term): term :=
   match t0 with
@@ -274,8 +277,8 @@ Arguments error {A E} _.
 
 Fixpoint check_proof_outline(s: stmt): result unit (loc * string) :=
   match s with
-    Assert laP P _ ;; (Assert laP' P' (Some j) ;; _) as s =>
-    if is_valid_entailment P P' j then
+    Assert laP P _ ;; (Assert laP' P' js ;; _) as s =>
+    if is_valid_entailment P P' js then
       check_proof_outline s
     else
       error (laP', "Could not verify entailment")
@@ -304,8 +307,8 @@ Fixpoint check_proof_outline(s: stmt): result unit (loc * string) :=
   end.
 
 Goal check_proof_outline (
-  Assert (locN 0) (BinOp (locN 1) Eq (Var (locN 2) "x") (Val (locN 3) 1)) None;;
-  Assert (locN 4) (BinOp (locN 5) Eq (Var (locN 6) "x") (Val (locN 7) 1)) (Some (JZ (locN 8)));;
+  Assert (locN 0) (BinOp (locN 1) Eq (Var (locN 2) "x") (Val (locN 3) 1)) [];;
+  Assert (locN 4) (BinOp (locN 5) Eq (Var (locN 6) "x") (Val (locN 7) 1)) [JZ (locN 8)];;
   Pass (locN 9)
 ) = ok tt.
 Proof.
@@ -313,8 +316,8 @@ Proof.
 Qed.
 
 Goal check_proof_outline (
-  Assert (locN 0) (BinOp (locN 1) And (BinOp (locN 2) Eq (Var (locN 3) "x") (Val (locN 4) 1)) (BinOp (locN 5) Eq (Var (locN 6) "y") (Val (locN 7) 1))) None;;
-  Assert (locN 8) (BinOp (locN 9) And (BinOp (locN 10) Eq (Var (locN 11) "y") (Val (locN 12) 1)) (BinOp (locN 13) Eq (Var (locN 14) "x") (Val (locN 15) 1))) (Some (JZ (locN 16)));;
+  Assert (locN 0) (BinOp (locN 1) And (BinOp (locN 2) Eq (Var (locN 3) "x") (Val (locN 4) 1)) (BinOp (locN 5) Eq (Var (locN 6) "y") (Val (locN 7) 1))) [];;
+  Assert (locN 8) (BinOp (locN 9) And (BinOp (locN 10) Eq (Var (locN 11) "y") (Val (locN 12) 1)) (BinOp (locN 13) Eq (Var (locN 14) "x") (Val (locN 15) 1))) [JZ (locN 16)];;
   Pass (locN 17)
 ) = ok tt.
 Proof.
@@ -322,12 +325,12 @@ Proof.
 Qed.
 
 Goal check_proof_outline (
-    Assert (locN 0) (BinOp (locN 1) And (BinOp (locN 2) Eq (Var (locN 14) "r") (BinOp (locN 3) Sub (Var (locN 4) "n") (Var (locN 5) "i"))) (Not (locN 6) (BinOp (locN 7) Eq (Var (locN 8) "i") (Val (locN 9) 0)))) None;;
-    Assert (locN 10) (BinOp (locN 11) Eq (BinOp (locN 12) Add (Var (locN 13) "r") (Val (locN 15) 1)) (BinOp (locN 16) Sub (Var (locN 17) "n") (BinOp (locN 18) Sub (Var (locN 19) "i") (Val (locN 20) 1)))) (Some (JZ_at (locN 21) (locN 22) 0));;
+    Assert (locN 0) (BinOp (locN 1) And (BinOp (locN 2) Eq (Var (locN 14) "r") (BinOp (locN 3) Sub (Var (locN 4) "n") (Var (locN 5) "i"))) (Not (locN 6) (BinOp (locN 7) Eq (Var (locN 8) "i") (Val (locN 9) 0)))) [];;
+    Assert (locN 10) (BinOp (locN 11) Eq (BinOp (locN 12) Add (Var (locN 13) "r") (Val (locN 15) 1)) (BinOp (locN 16) Sub (Var (locN 17) "n") (BinOp (locN 18) Sub (Var (locN 19) "i") (Val (locN 20) 1)))) [JZ_at (locN 21) (locN 22) 0];;
     Assign (locN 23) "i" (BinOp (locN 24) Sub (Var (locN 25) "i") (Val (locN 26) 1));;
-    Assert (locN 27) (BinOp (locN 28) Eq (BinOp (locN 29) Add (Var (locN 30) "r") (Val (locN 31) 1)) (BinOp (locN 32) Sub (Var (locN 33) "n") (Var (locN 34) "i"))) None;;
+    Assert (locN 27) (BinOp (locN 28) Eq (BinOp (locN 29) Add (Var (locN 30) "r") (Val (locN 31) 1)) (BinOp (locN 32) Sub (Var (locN 33) "n") (Var (locN 34) "i"))) [];;
     Assign (locN 35) "r" (BinOp (locN 36) Add (Var (locN 37) "r") (Val (locN 38) 1));;
-    Assert (locN 39) (BinOp (locN 40) Eq (Var (locN 41) "r") (BinOp (locN 42) Sub (Var (locN 43) "n") (Var (locN 44) "i"))) None;;
+    Assert (locN 39) (BinOp (locN 40) Eq (Var (locN 41) "r") (BinOp (locN 42) Sub (Var (locN 43) "n") (Var (locN 44) "i"))) [];;
     Pass (locN 45)
 ) = ok tt.
 Proof.

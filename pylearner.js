@@ -1325,14 +1325,14 @@ class MethodDeclaration extends Declaration {
   }
 
   checkProofOutlines() {
-    let env = this.parameterDeclarations.reduceRight((acc, d) => Cons(d.name, acc), Nil);
+    let env = this.parameterDeclarations.reduceRight((acc, d) => EnvCons(d.name, acc), EnvNil);
     let outlineStart = null;
     let outlineStartEnv = null;
 
     for (let i = 0; i < this.bodyBlock.length; i++) {
       const stmt = this.bodyBlock[i];
       if (stmt instanceof ExpressionStatement && stmt.expr instanceof AssignmentExpression && stmt.expr.declaration != null)
-        env = Cons(stmt.expr.declaration.name, env);
+        env = EnvCons(stmt.expr.declaration.name, env);
       if (stmt instanceof AssertStatement && stmt.comment != null) {
         if (stmt.comment.text.includes('PRECONDITION')) {
           if (outlineStart != null)
@@ -1471,7 +1471,7 @@ function expectConjunctIndex(scanner) {
   return k - 1;
 }
 
-function parseJustification0(scanner) {
+function parseJustification(scanner) {
   switch (scanner.token) {
     case 'Z': {
       const l = scanner.loc();
@@ -1500,13 +1500,22 @@ function parseJustification0(scanner) {
   }
 }
 
-function parseJustification(comment) {
+function parseJustifications(comment) {
   const scanner = new JustificationScanner(comment);
   scanner.nextToken();
-  const j = parseJustification0(scanner);
+  if (scanner.token == '<EOF>')
+    return JustifNil;
+  let result = JustifNil;
+  for (;;) {
+    const j = parseJustification(scanner);
+    result = JustifCons(j, result);
+    if (scanner.token != 'of')
+      break;
+    scanner.nextToken();
+  }
   if (scanner.token != '<EOF>')
     scanner.error("End of justification expected");
-  return j;
+  return result;
 }
 
 function parseProofOutline(stmts, i, precededByAssert) {
@@ -1515,7 +1524,7 @@ function parseProofOutline(stmts, i, precededByAssert) {
   const stmt = stmts[i];
   if (stmt instanceof AssertStatement) {
     const body = parseProofOutlineExpression(stmt.condition);
-    const justif = precededByAssert ? Some(parseJustification(stmt.comment)) : None;
+    const justif = precededByAssert ? parseJustifications(stmt.comment) : JustifNil;
     return Seq(Assert(stmt.loc, body, justif), parseProofOutline(stmts, i + 1, true));
   } else if (stmt instanceof ExpressionStatement && stmt.expr instanceof AssignmentExpression && stmt.expr.op == '=' && stmt.expr.lhs instanceof VariableExpression) {
     return Seq(Assign(stmt.loc, stmt.expr.lhs.name, parseProofOutlineExpression(stmt.expr.rhs)), parseProofOutline(stmts, i + 1, false));
