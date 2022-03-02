@@ -15,4 +15,3 @@ proof_checker.js
 
 *.d
 *.conf
-Makefile*
