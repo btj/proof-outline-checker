@@ -17,3 +17,4 @@ proof_checker.js
 *.conf
 
 node_modules
+pylearner.js
