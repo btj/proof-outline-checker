@@ -36,16 +36,21 @@ for (let operator of operatorsList) {
 }
 
 class Comment {
-  constructor(doc, start, text) {
-    this.doc = doc;
+  constructor(locFactory, start, text, isOnNewLine) {
+    this.locFactory = locFactory;
     this.start = start;
     this.text = text;
+    this.isOnNewLine = isOnNewLine;
+  }
+
+  loc() {
+    return this.locFactory(this.start, this.start + this.text.length);
   }
 }
 
 class Scanner {
-  constructor(doc, text, parseExpression) {
-    this.doc = doc;
+  constructor(locFactory, text, parseExpression, commentListener) {
+    this.locFactory = locFactory;
     this.text = text;
     this.pos = -1;
     this.startOfLine = 0;
@@ -53,6 +58,7 @@ class Scanner {
     this.bracketsDepth = parseExpression ? 1 : 0;
     this.emittedEOL = true;
     this.onNewLine = true;
+    this.commentListener = commentListener;
     this.eat();
   }
 
@@ -85,8 +91,11 @@ class Scanner {
           const commentStart = this.pos;
           while (this.c != '<EOF>' && this.c != '\n' && this.c != '\r')
             this.eat();
+          const comment = new Comment(this.locFactory, commentStart, this.text.slice(commentStart, this.pos), this.onNewLine);
+          if (this.commentListener)
+            this.commentListener(comment);
           if (!this.onNewLine)
-            this.comment = new Comment(this.doc, commentStart, this.text.slice(commentStart, this.pos));
+            this.comment = comment;
           break;
         default:
           break eatWhite;
@@ -123,7 +132,7 @@ class Scanner {
           this.indentStack.pop();
           return "DEDENT";
         } else
-          throw new LocError({doc: this.doc, start: this.tokenStart, end: this.tokenStart + 1}, "Bad indentation");
+          throw new LocError(this.locFactory(this.tokenStart, this.tokenStart + 1), "Bad indentation");
       }
     }
     this.onNewLine = false;
@@ -158,7 +167,7 @@ class Scanner {
         break;
     }
     if (longestOperatorFound === null)
-      throw new LocError({doc: this.doc, start: this.tokenStart, end: this.tokenStart + 1}, "Bad character");
+      throw new LocError(this.locFactory(this.tokenStart, this.tokenStart + 1), "Bad character");
     this.pos += longestOperatorFound.length - 1;
     this.eat();
     if (longestOperatorFound in ['(', '[', '{'])
@@ -195,10 +204,18 @@ class OperandBinding {
   }
 }
 
+class ImplicitVariableDeclaration {
+  constructor(name, type) {
+    this.name = name;
+    this.type = new ImplicitTypeExpression(type);
+  }
+}
+
 class Scope {
-  constructor(outerScope) {
+  constructor(outerScope, inferBindings) {
     this.outerScope = outerScope;
     this.bindings = {};
+    this.inferBindings = inferBindings;
   }
   
   tryLookup(x) {
@@ -214,6 +231,10 @@ class Scope {
     if (result == null)
       if (createIfMissing) {
         result = this.bindings[x] = new LocalBinding(x, null);
+      } else if (this.inferBindings) {
+        const type = new InferredType();
+        const decl = new ImplicitVariableDeclaration(x, type);
+        result = this.bindings[x] = new LocalBinding(decl, type);
       } else
         throw new ExecutionError(loc, "No such variable in scope: " + x);
     return result;
@@ -406,10 +427,7 @@ class BinaryOperatorExpression extends Expression {
       case '==':
       case '!=':
         let lt = this.leftOperand.check_(env);
-        let rt = this.rightOperand.check_(env);
-        if (!(lt instanceof ReferenceType && rt instanceof ReferenceType))
-         if (lt != rt)
-           this.executionError("Cannot compare a " + lt + " and a " + rt);
+        this.rightOperand.checkAgainst(env, lt);
         return booleanType;
       default:
         this.executionError("Operator not supported");
@@ -952,8 +970,36 @@ class Type {
       return "<span class='keyword'>" + text + "</span>";
     return text;
   }
+  unwrapInferredType() {
+    let t = this;
+    while (t instanceof InferredType && t.type != null)
+      t = t.type;
+    return t;
+  }
   equals(other) {
+    other = other.unwrapInferredType();
+    if (other instanceof InferredType)
+      return other.equals(this);
     return this == other;
+  }
+}
+
+class InferredType extends Type {
+  constructor() {
+    super();
+    this.type = null;
+  }
+  equals(other) {
+    other = other.unwrapInferredType();
+    if (this == other)
+      return true;
+    if (this.type != null)
+      return this.type.equals(other);
+    this.type = other;
+    return true;
+  }
+  toString() {
+    return this.type == null ? "?" : this.type.toString();
   }
 }
 
@@ -1016,6 +1062,9 @@ class ListType extends ReferenceType {
   toString() { return "list"; }
   toHTML() { return "list"; }
   equals(other) {
+    other = other.unwrapInferredType();
+    if (other instanceof InferredType)
+      return other.equals(this);
     return other instanceof ListType && this.elementType.equals(other.elementType);
   }
 }
@@ -1027,11 +1076,12 @@ class TypeExpression extends ASTNode {
 }
 
 class ImplicitTypeExpression extends ASTNode {
-  constructor() {
+  constructor(type) {
     super(null);
+    this.type = type || intType;
   }
   resolve() {
-    return this.type = intType;
+    return this.type;
   }
 }
 
@@ -1280,7 +1330,7 @@ class MethodDeclaration extends Declaration {
     this.name = name;
     this.parameterDeclarations = parameterDeclarations;
     this.bodyBlock = bodyBlock;
-    let closeBraceLoc = {doc: loc.doc, start: loc.end - 1, end: loc.end};
+    let closeBraceLoc = new Loc(loc.doc, loc.end - 1, loc.end);
     this.implicitReturnStmt = new ReturnStatement(closeBraceLoc, closeBraceLoc);
   }
 
@@ -1438,7 +1488,7 @@ class JustificationScanner {
       this.value = null;
       return this.text.substring(this.tokenStart, this.pos);
     }
-    throw new LocError({doc: this.comment.doc, start: this.comment.start + this.tokenStart, end: this.comment.start + this.tokenStart + 1}, "Bad character");
+    throw new LocError(this.comment.locFactory(this.comment.start + this.tokenStart, this.comment.start + this.tokenStart + 1), "Bad character");
   }
 
   nextToken() {
@@ -1455,7 +1505,7 @@ class JustificationScanner {
   }
 
   loc() {
-    return new Loc(this.comment.doc, this.comment.start + this.tokenStart, this.comment.start + this.pos);
+    return this.comment.locFactory(this.comment.start + this.tokenStart, this.comment.start + this.pos);
   }
 
   error(msg) {
@@ -1496,7 +1546,25 @@ function parseJustification(scanner) {
       return JRewrite(l, lk1, k1, lk2, k2);
     }
     default:
-      scanner.error("'Z' or 'Herschrijven' expected");
+      if (has(laws, scanner.token)) {
+        const l = scanner.loc();
+        const lawName = scanner.token;
+        scanner.nextToken();
+        const ks = [];
+        if (scanner.token == 'op') {
+          scanner.expect('op');
+          for (;;) {
+            const lk = scanner.loc();
+            const k = expectConjunctIndex(scanner);
+            ks.push([lk, k]);
+            if (scanner.token != 'en')
+              break;
+            scanner.expect('en');
+          }
+        }
+        return JLaw(l, laws[lawName].law, ks.reduceRight((acc, [lk, k]) => LawAppIndicesCons(lk, k, acc), LawAppIndicesNil));
+      }
+      scanner.error("'Z' or 'Herschrijven' or law name expected");
   }
 }
 
@@ -1541,7 +1609,7 @@ function parseProofOutline(stmts, i, precededByAssert) {
 function checkProofOutline(env, stmts) {
   const outline = parseProofOutline(stmts, 0, false);
   if (!stmt_is_well_typed(env, outline))
-    throw new LocError({doc: stmts[0].loc.doc, start: stmts[0].loc.start, end: stmts[stmts.length - 1].loc.end}, "Proof outline is not well-typed");
+    throw new LocError(new Loc(stmts[0].loc.doc, stmts[0].loc.start, stmts[stmts.length - 1].loc.end), "Proof outline is not well-typed");
   const result = check_proof_outline(outline);
   if (!isOk(result))
     throw new LocError(getLoc(result), getMsg(result));
@@ -1601,6 +1669,10 @@ class Loc {
   }
 }
 
+function mkLocFactory(doc) {
+  return (start, end) => new Loc(doc, start, end);
+}
+
 class LocError extends Error {
   constructor(loc, msg) {
     super();
@@ -1622,9 +1694,9 @@ class ExecutionError extends LocError {
 }
 
 class Parser {
-  constructor(doc, text, parseExpression) {
-    this.doc = doc;
-    this.scanner = new Scanner(doc, text, parseExpression);
+  constructor(locFactory, text, parseExpression, commentListener) {
+    this.locFactory = locFactory;
+    this.scanner = new Scanner(locFactory, text, parseExpression, commentListener);
     this.token = this.scanner.nextToken();
     this.posStack = [];
   }
@@ -1634,15 +1706,15 @@ class Parser {
   }
 
   popLoc() {
-    return new Loc(this.doc, this.posStack.pop(), this.lastPos);
+    return this.locFactory(this.posStack.pop(), this.lastPos);
   }
 
   dupLoc() {
-    return new Loc(this.doc, this.posStack[this.posStack.length - 1], this.lastPos);
+    return this.locFactory(this.posStack[this.posStack.length - 1], this.lastPos);
   }
 
   tokenLoc() {
-    return new Loc(this.doc, this.scanner.tokenStart, this.scanner.pos);
+    return this.locFactory(this.scanner.tokenStart, this.scanner.pos);
   }
 
   parseError(msg) {
@@ -2162,9 +2234,28 @@ class Parser {
   }
 }
 
+function parseDeclarations(locFactory, text, parseComment) {
+  const parser = new Parser(locFactory, text, false, parseComment);
+  return parser.parseDeclarations();
+}
+
+function parseStatements(locFactory, text) {
+  const parser = new Parser(locFactory, text);
+  return parser.parseStatements({'EOF': true});
+}
+
+function parseExpression(locFactory, text) {
+  const parser = new Parser(locFactory, text, true);
+  const result = parser.parseExpression();
+  parser.expect('EOF');
+  return result;
+}
+
 let lastCheckedDeclarations = null;
 let classes;
 let toplevelMethods;
+let lawComments;
+let laws;
 
 function checkDeclarations(declarations) {
   classes = {};
@@ -2346,9 +2437,44 @@ function updateMachineView() {
 
 let nbProofOutlinesChecked;
 
+class LawInfo {
+  constructor(comment, name, law) {
+    this.comment = comment;
+    this.name = name;
+    this.law = law;
+  }
+}
+
+function checkLaws() {
+  laws = {};
+  for (const comment of lawComments) {
+    const text = comment.text;
+    const wetIndex = text.indexOf('Wet');
+    const colonIndex = text.indexOf(':', wetIndex + 3);
+    if (colonIndex < 0)
+      throw new LocError(comment.loc(), "Law must be of the form 'Wet NAME: PREMISES ==> CONCLUSION'");
+    const name = text.slice(wetIndex + 3, colonIndex).trim();
+    const implication = text.substring(colonIndex + 1);
+    const arrowIndex = implication.indexOf('==>');
+    if (arrowIndex < 0)
+      throw new LocError(comment.loc(), "Law must be of the form 'Wet NAME: PREMISES ==> CONCLUSION'");
+    const premiseText = implication.slice(0, arrowIndex);
+    const premisePos = comment.start + colonIndex + 1;
+    const premise = parseExpression((start, end) => comment.locFactory(premisePos + start, premisePos + end), premiseText);
+    const conclusionText = implication.substring(arrowIndex + 3);
+    const conclusionPos = premisePos + arrowIndex + 3
+    const conclusion = parseExpression((start, end) => comment.locFactory(conclusionPos + start, conclusionPos + end), conclusionText);
+    const scope = new Scope(null, true);
+    premise.checkAgainst(scope, booleanType);
+    conclusion.checkAgainst(scope, booleanType);
+    laws[name] = new LawInfo(comment, name, Law(parseProofOutlineExpression(premise), parseProofOutlineExpression(conclusion)));
+  }
+}
+
 function checkProofOutlines() {
   handleError(async () => {
-    parseDeclarations();
+    parseDeclarationsBox();
+    checkLaws();
     nbProofOutlinesChecked = 0;
     for (let m in toplevelMethods)
       toplevelMethods[m].checkProofOutlines();
@@ -2358,10 +2484,9 @@ function checkProofOutlines() {
 
 async function executeStatements(step) {
   await handleError(async () => {
-    parseDeclarations();
+    parseDeclarationsBox();
     let stmtsText = statementsEditor.getValue();
-    let parser = new Parser(statementsEditor, stmtsText);
-    let stmts = parser.parseStatements({'EOF': true});
+    let stmts = parseStatements(mkLocFactory(statementsEditor), stmtsText);
     let typeScope = new Scope(toplevelScope); // The type bindings should not be present when executing
     //for (let stmt of stmts)
     //  stmt.check(typeScope);
@@ -2442,15 +2567,20 @@ async function handleError(body) {
   }
 }
 
-function parseDeclarations() {
+function processComment(comment) {
+  if (comment.isOnNewLine && comment.text.trim().startsWith('Wet '))
+    lawComments.push(comment);
+}
+
+function parseDeclarationsBox() {
   let text = declarationsEditor.getValue();
   if (lastCheckedDeclarations != null && lastCheckedDeclarations == text)
     return;
   lastCheckedDeclarations = null;
   resetMachine();
   updateMachineView();
-  let parser = new Parser(declarationsEditor, text);
-  let decls = parser.parseDeclarations();
+  lawComments = [];
+  let decls = parseDeclarations(mkLocFactory(declarationsEditor), text, processComment);
   checkDeclarations(decls);
   lastCheckedDeclarations = text;
 }
@@ -2470,11 +2600,9 @@ let syntheticVariableCount = 0;
 
 async function evaluateExpression(step) {
   await handleError(async () => {
-    parseDeclarations();
+    parseDeclarationsBox();
     let exprText = expressionEditor.getValue();
-    let parser = new Parser(expressionEditor, exprText, true);
-    let e = parser.parseExpression();
-    parser.expect("EOF");
+    let e = parseExpression(mkLocFactory(expressionEditor), exprText);
     //e.check_(toplevelScope);
     currentBreakCondition = () => step;
     await e.evaluate(toplevelScope);
@@ -2663,10 +2791,10 @@ def copy(n):
         r = r + 1
         assert 0 <= i and r == n - i
     assert 0 <= i and r == n - i and not 0 < i
-    assert 0 <= i and r == n - i and i <= 0 # Z op 3 # POSTCONDITION
+    assert 0 <= i and r == n - i and i <= 0 # Z op 3
     assert r == n - i and i == 0 # LeAntisym op 3 en 1
     assert r == n - 0 # Herschrijven met 2 in 1
-    assert r == n # Z op 1 
+    assert r == n # Z op 1 # POSTCONDITION
 
     return r
 `,
@@ -2789,25 +2917,23 @@ async function testPyLearner() {
   for (const {declarations, statements, expression} of examples) {
     resetMachine();
     iterationCount = 0;
-    let declsParser = new Parser('example', declarations);
-    let decls = declsParser.parseDeclarations();
+    lawComments = [];
+    let decls = parseDeclarations(mkLocFactory(declarations), declarations, processComment);
     checkDeclarations(decls);
 
-    let stmtsParser = new Parser('example', statements);
-    let stmts = stmtsParser.parseStatements({'EOF': true});
+    let stmts = parseStatements(mkLocFactory(statements), statements);
     for (const stmt of stmts) {
       if (await stmt.execute(toplevelScope) !== undefined)
         break;
     }
 
     if (expression != '') {
-      let exprParser = new Parser('example', expression, true);
-      let e = exprParser.parseExpression();
-      exprParser.expect('EOF');
+      let e = parseExpression(mkLocFactory(expression), expression);
       await e.evaluate(toplevelScope);
       let [v] = pop(1);
     }
 
+    checkLaws();
     for (let m in toplevelMethods)
       toplevelMethods[m].checkProofOutlines();
   }

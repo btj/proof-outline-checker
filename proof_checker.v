@@ -3,6 +3,13 @@ Require Export normalizer.
 
 Export ListNotations.
 
+Inductive result(A E: Type) :=
+  Ok(a: A)
+| Error(e: E)
+.
+Arguments Ok {A E} _.
+Arguments Error {A E} _.
+
 Inductive term_equiv: term -> term -> Prop :=
 | Val_equiv l1 l2 z:
   term_equiv (Val l1 z) (Val l2 z)
@@ -219,34 +226,114 @@ Fixpoint rewrites(lhs rhs t: term): list term :=
     | t => [t]
     end.
 
-Definition is_valid_conjunct_entailment0(Hs: list term)(C: term)(j: justif): bool :=
+Definition update(f: var -> option term)(x: var)(t: term)(y: var): option term :=
+  if string_dec x y then Some t else f y.
+
+Fixpoint match_term f c C :=
+  match c, C with
+    Var _ x, t =>
+    match f x with
+      None => Some (update f x t)
+    | Some t' =>
+      if term_equivb t t' then Some f else None
+    end
+  | Val _ v, Val _ v' => if Z.eqb v v' then Some f else None
+  | BinOp _ op t1 t2, BinOp _ op' t1' t2' =>
+    if binop_eq_dec op op' then
+      match match_term f t1 t1' with
+        None => None
+      | Some f =>
+        match_term f t2 t2'
+      end
+    else
+      None
+  | Not _ t, Not _ t' =>
+    match_term f t t'
+  | _, _ => None
+  end.
+
+Fixpoint law_application_checker_for(l: loc)(f: var -> option term)(Hs: list term)(ps: list term)(c: term)(ks: list (loc * nat)): result (term -> bool) (loc * string) :=
+  match ps, ks with
+    [], [] =>
+    Ok (fun C =>
+      match match_term f c C with
+      | None => false
+      | Some _ => true
+      end
+    )
+  | p::ps, (lk, k)::ks =>
+    match nth_error Hs k with
+    | None => Error (lk, "Conjunct index out of range")
+    | Some H =>
+      match match_term f p H with
+      | None => Error (lk, "Conjunct does not match corresponding law premise")
+      | Some f =>
+        law_application_checker_for l f Hs ps c ks
+      end
+    end
+  | _, _ => Error (l, "Number of conjunct indices does not match number of law premises")
+  end.
+
+Definition conjunct_entailment_checker_for(Hs: list term)(j: justif): result (term -> bool) (loc * string) :=
   match j with
-    JZ l => is_Z_tautology C
+    JZ l => Ok is_Z_tautology
   | JZ_at l lk k =>
     match nth_error Hs k with
-      None => false
-    | Some H => is_Z_entailment H C
+      None => Error (lk, "Conjunct index out of range")
+    | Some H => Ok (is_Z_entailment H)
     end
   | JRewrite l lk1 k1 lk2 k2 =>
     match nth_error Hs k1 with
-    | Some (BinOp leq Eq LHS RHS) =>
-      match nth_error Hs k2 with
-        None => false
-      | Some H2 =>
-        if existsb (term_equivb C) (rewrites LHS RHS H2) then true else false
+    | Some H =>
+      match H with
+      | BinOp leq Eq LHS RHS =>
+        match nth_error Hs k2 with
+          None => Error (lk2, "Conjunct index out of range")
+        | Some H2 =>
+          Ok (fun C => if existsb (term_equivb C) (rewrites LHS RHS H2) then true else false)
+        end
+      | _ => Error (loc_of_term H, "Equality expected")
       end
-    | _ => false
+    | _ => Error (lk1, "Conjunct index out of range")
+    end
+  | JLaw l (Law ps c) ks =>
+    law_application_checker_for l (fun _ => None) Hs ps c ks
+  end.
+
+Fixpoint check_all{A B E}(checker: A -> result B E)(xs: list A): result (list B) E :=
+  match xs with
+    [] => Ok []
+  | x::xs =>
+    match checker x with
+      Ok y =>
+      match check_all checker xs with
+        Ok ys => Ok (y::ys)
+      | Error e => Error e
+      end
+    | Error e => Error e
     end
   end.
 
-Definition is_valid_conjunct_entailment(Hs: list term)(C: term)(js: list justif): bool :=
-  existsb (term_equivb C) Hs ||
-  existsb (is_valid_conjunct_entailment0 Hs C) js.
+Definition check_conjunct_entailment(Hs: list term)(checkers: list (term -> bool))(C: term): result unit (loc * string) :=
+  if
+    (existsb (term_equivb C) Hs ||
+     existsb (fun checker => checker C) checkers)%bool
+  then
+    Ok tt
+  else
+    Error (loc_of_term C, "Conjunct not justified").
 
-Definition is_valid_entailment(P P': term)(js: list justif): bool :=
-  let P_conjuncts := conjuncts_of P in
-  let P'_conjuncts := conjuncts_of P' in
-  forallb (fun P0 => is_valid_conjunct_entailment P_conjuncts P0 js) P'_conjuncts .
+Definition check_entailment(P P': term)(js: list justif): result unit (loc * string) :=
+  let Hs := conjuncts_of P in
+  match check_all (conjunct_entailment_checker_for Hs) js with
+    Error e => Error e
+  | Ok checkers =>
+    let Cs := conjuncts_of P' in
+    match check_all (check_conjunct_entailment Hs checkers) Cs with
+      Ok _ => Ok tt
+    | Error e => Error e
+    end
+  end.
 
 Fixpoint subst(x: var)(t: term)(t0: term): term :=
   match t0 with
@@ -263,49 +350,43 @@ Fixpoint ends_with_assert(s: stmt)(P: term): bool :=
   | _ => false
   end.
 
-Inductive result(A E: Type) :=
-  ok(a: A)
-| error(e: E)
-.
-Arguments ok {A E} _.
-Arguments error {A E} _.
-
 Fixpoint check_proof_outline(s: stmt): result unit (loc * string) :=
   match s with
     Assert laP P _ ;; (Assert laP' P' js ;; _) as s =>
-    if is_valid_entailment P P' js then
+    match check_entailment P P' js with
+      Ok _ =>
       check_proof_outline s
-    else
-      error (laP', "Could not verify entailment")
+    | Error e => Error e
+    end
   | Assert laP P _ ;; Assign lass x t ;; (Assert laQ Q _ ;; _) as s =>
     if term_equivb P (subst x t Q) then
       check_proof_outline s
     else
-      error (laP, "Assignment precondition does not match postcondition with RHS substituted for LHS")
+      Error (laP, "Assignment precondition does not match postcondition with RHS substituted for LHS")
   | Assert laInv Inv _ ;; (While lw C ((Assert laP P _ ;; _) as body)) ;; ((Assert laQ Q _ ;; _) as s) =>
     if term_equivb' P (BinOp laInv And Inv C) then
       if ends_with_assert body Inv then
         match check_proof_outline body with
-          ok _ =>
+          Ok _ =>
           if term_equivb' Q (BinOp laInv And Inv (Not laInv C)) then
             check_proof_outline s
           else
-            error (laQ, "Loop postcondition does not match conjunction of invariant and negation of condition")
-        | error e => error e
+            Error (laQ, "Loop postcondition does not match conjunction of invariant and negation of condition")
+        | Error e => Error e
         end
       else
-        error (lw, "Body of loop does not end with an assert statement that asserts the loop invariant")
+        Error (lw, "Body of loop does not end with an assert statement that asserts the loop invariant")
     else
-      error (laP, "Loop body precondition does not match conjunction of invariant and condition")
-  | Assert laP P _ ;; Pass lp => ok tt
-  | _ => error (loc_of_stmt s, "Malformed proof outline")
+      Error (laP, "Loop body precondition does not match conjunction of invariant and condition")
+  | Assert laP P _ ;; Pass lp => Ok tt
+  | _ => Error (loc_of_stmt s, "Malformed proof outline")
   end.
 
 Goal check_proof_outline (
   Assert (locN 0) (BinOp (locN 1) Eq (Var (locN 2) "x") (Val (locN 3) 1)) [];;
   Assert (locN 4) (BinOp (locN 5) Eq (Var (locN 6) "x") (Val (locN 7) 1)) [JZ (locN 8)];;
   Pass (locN 9)
-) = ok tt.
+) = Ok tt.
 Proof.
   reflexivity.
 Qed.
@@ -314,7 +395,7 @@ Goal check_proof_outline (
   Assert (locN 0) (BinOp (locN 1) And (BinOp (locN 2) Eq (Var (locN 3) "x") (Val (locN 4) 1)) (BinOp (locN 5) Eq (Var (locN 6) "y") (Val (locN 7) 1))) [];;
   Assert (locN 8) (BinOp (locN 9) And (BinOp (locN 10) Eq (Var (locN 11) "y") (Val (locN 12) 1)) (BinOp (locN 13) Eq (Var (locN 14) "x") (Val (locN 15) 1))) [JZ (locN 16)];;
   Pass (locN 17)
-) = ok tt.
+) = Ok tt.
 Proof.
   reflexivity.
 Qed.
@@ -327,7 +408,7 @@ Goal check_proof_outline (
     Assign (locN 35) "r" (BinOp (locN 36) Add (Var (locN 37) "r") (Val (locN 38) 1));;
     Assert (locN 39) (BinOp (locN 40) Eq (Var (locN 41) "r") (BinOp (locN 42) Sub (Var (locN 43) "n") (Var (locN 44) "i"))) [];;
     Pass (locN 45)
-) = ok tt.
+) = Ok tt.
 Proof.
   reflexivity.
 Qed.
@@ -347,7 +428,7 @@ Proof.
 Qed.
 *)
 
-Goal check_proof_outline outline1 = ok tt.
+Goal check_proof_outline outline1 = Ok tt.
 Proof.
   reflexivity.
 Qed.

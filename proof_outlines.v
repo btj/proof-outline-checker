@@ -40,10 +40,22 @@ Inductive term :=
 | BinOp(l: loc)(op: binop)(t1 t2: term)
 | Not(l: loc)(t: term)
 .
+
+Fixpoint loc_of_term(t: term) :=
+  match t with
+    Val l z => l
+  | Var l x => l
+  | BinOp l op t1 t2 => l
+  | Not l t => l
+  end.
+
+Inductive law := Law(ps: list term)(c: term).
+
 Inductive justif :=
 | JZ(l: loc)
 | JZ_at(l: loc)(kl: loc)(k: nat)
 | JRewrite(l: loc)(k1l: loc)(k1: nat)(k2l: loc)(k2: nat)
+| JLaw(l: loc)(law_: law)(ks: list (loc * nat))
 .
 Inductive stmt :=
 | Assert(l: loc)(t: term)(j: list justif)
