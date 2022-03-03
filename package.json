@@ -1,0 +1,22 @@
+{
+  "name": "proof-outline-checker",
+  "version": "1.0.0",
+  "description": "",
+  "main": "test.js",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/btj/proof-outline-checker.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/btj/proof-outline-checker/issues"
+  },
+  "homepage": "https://github.com/btj/proof-outline-checker#readme",
+  "dependencies": {
+    "typescript": "^4.6.2"
+  }
+}

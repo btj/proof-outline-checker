@@ -1,4 +1,4 @@
-all: proof_checker.js
+all: proof_checker.js pylearner.js
 
 COQ_OPTS=-R . proofchecker
 
@@ -22,3 +22,9 @@ proof_checker.byte: proof_checker.ml proof_checker_main.ml
 
 proof_checker.js: proof_checker.byte
 	js_of_ocaml --pretty --no-inline proof_checker.byte
+
+node_modules:
+	npm ci
+
+pylearner.js: node_modules pylearner.ts
+	-npx tsc

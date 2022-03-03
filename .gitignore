@@ -15,3 +15,5 @@ proof_checker.js
 
 *.d
 *.conf
+
+node_modules
