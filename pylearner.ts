@@ -20,14 +20,14 @@ declare function BinOp(loc: Loc, op: BinOp_, t1: Term_, t2: Term_): Term_;
 declare function Not(loc: Loc, t: Term_): Term_;
 declare function JZ(l: Loc): Justif_;
 declare function JZ_at(l: Loc, lk: Loc, k: number): Justif_;
-declare function JRewrite(l: Loc, lk1: Loc, k1: number, lk2: Loc, k2: number);
-declare function Law(p: Term_, c: Term_);
+declare function JRewrite(l: Loc, lk1: Loc, k1: number, lk2: Loc, k2: number): Justif_;
+declare function Law(p: Term_, c: Term_): Law_;
 declare var LawAppIndicesNil: LawAppIndices_;
 declare function LawAppIndicesCons(lk: Loc, k: number, ks: LawAppIndices_): LawAppIndices_;
 declare function JLaw(l: Loc, law: Law_, ks: LawAppIndices_): Justif_;
 declare var JustifNil: JustifList_;
 declare function JustifCons(j: Justif_, js: JustifList_): JustifList_;
-declare function Pass(l: Loc);
+declare function Pass(l: Loc): Stmt_;
 declare function Seq(s1: Stmt_, s2: Stmt_): Stmt_;
 declare function Assert(l: Loc, t: Term_, js: JustifList_): Stmt_;
 declare function Assign(l: Loc, x: string, t: Term_): Stmt_;
@@ -38,10 +38,10 @@ declare function isOk(result: Result_): boolean;
 declare function getLoc(result: Result_): Loc;
 declare function getMsg(result: Result_): string;
 
-function isDigit(c) { return '0' <= c && c <= '9'; }
-function isAlpha(c) { return 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || c == '_'; }
+function isDigit(c: string) { return '0' <= c && c <= '9'; }
+function isAlpha(c: string) { return 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || c == '_'; }
 
-function has(object, propertyName) { return Object.prototype.hasOwnProperty.call(object, propertyName); }
+function has(object: object, propertyName: string) { return Object.prototype.hasOwnProperty.call(object, propertyName); }
 
 const keywordsList = [
   'False', 'None', 'True', 'and', 'as', 'assert', 'async',
@@ -51,7 +51,8 @@ const keywordsList = [
   'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield'
 ];
 
-const keywords = {};
+type StringSet = {[index: string]: true};
+const keywords: StringSet = {};
 
 for (let keyword of keywordsList)
   keywords[keyword] = true;
@@ -66,8 +67,8 @@ const operatorsList = [
   '&=', '|=', '^=', '>>=', '<<=', '**='
 ]
 
-const operators = {};
-const operatorPrefixes = {};
+const operators: StringSet = {};
+const operatorPrefixes: StringSet = {};
 
 for (let operator of operatorsList) {
   operators[operator] = true;
@@ -75,8 +76,10 @@ for (let operator of operatorsList) {
     operatorPrefixes[operator.substring(0, i)] = true;
 }
 
+type LocFactory = (start: number, end: number) => Loc;
+
 class Comment_ {
-  constructor(public locFactory, public start, public text, public isOnNewLine) {}
+  constructor(public locFactory: LocFactory, public start: number, public text: string, public isOnNewLine: boolean) {}
 
   loc() {
     return this.locFactory(this.start, this.start + this.text.length);
@@ -96,7 +99,11 @@ class Scanner {
   tokenStart: any;
   value: any;
 
-  constructor(public locFactory, public text, public parseExpression, public commentListener) {
+  constructor(
+      public locFactory: LocFactory,
+      public text: string,
+      public parseExpression?: boolean,
+      public commentListener?: (comment: Comment_) => void) {
     this.bracketsDepth = parseExpression ? 1 : 0;
     this.eat();
   }
@@ -217,11 +224,18 @@ class Scanner {
   }
 }
 
-class LocalBinding {
+abstract class Binding {
+  constructor(public value: any) {}
+  abstract getNameHTML(): string;
+}
 
-  constructor(public declaration, public value) {}
+class LocalBinding extends Binding {
+
+  constructor(public declaration: any, public value: any) {
+    super(value);
+  }
   
-  setValue(value) {
+  setValue(value: any) {
     return this.value = value;
   }
 
@@ -230,9 +244,11 @@ class LocalBinding {
   }
 }
 
-class OperandBinding {
+class OperandBinding extends Binding {
 
-  constructor(public expression, public value) {}
+  constructor(public expression: Expression, public value: any) {
+    super(value);
+  }
 
   getNameHTML() {
     return "(operand)";
@@ -243,18 +259,18 @@ class ImplicitVariableDeclaration {
 
   type: ImplicitTypeExpression;
 
-  constructor(public name, type) {
+  constructor(public name: string, type: Type) {
     this.type = new ImplicitTypeExpression(type);
   }
 }
 
 class Scope {
 
-  bindings = {};
+  bindings: {[index: string]: any} = {};
 
-  constructor(public outerScope, public inferBindings?) {}
+  constructor(public outerScope: Scope|null, public inferBindings?: boolean) {}
   
-  tryLookup(x) {
+  tryLookup(x: string): any {
     if (has(this.bindings, x))
       return this.bindings[x];
     if (this.outerScope != null)
@@ -262,7 +278,7 @@ class Scope {
     return null;
   }
   
-  lookup(loc, x, createIfMissing) {
+  lookup(loc: Loc, x: string, createIfMissing?: boolean) {
     let result = this.tryLookup(x);
     if (result == null)
       if (createIfMissing) {
@@ -276,7 +292,7 @@ class Scope {
     return result;
   }
   
-  *allBindings() {
+  *allBindings(): Iterable<any> {
     if (this.outerScope != null)
       yield* this.outerScope.allBindings();
     for (let x in this.bindings)
@@ -288,7 +304,7 @@ class StackFrame {
 
   operands = [];
 
-  constructor(public title, public env) {}
+  constructor(public title: string, public env: Scope) {}
 
   *allBindings() {
     yield* this.env.allBindings();
@@ -299,34 +315,36 @@ class StackFrame {
 
 class ASTNode {
 
-  constructor(public loc, public instrLoc) {}
+  constructor(public loc: Loc, public instrLoc: Loc|null) {}
 
   async breakpoint() {
     await checkBreakpoint(this);
   }
   
-  executionError(msg): never {
-    throw new ExecutionError(this.instrLoc, msg);
+  executionError(msg: string): never {
+    throw new ExecutionError(this.instrLoc || this.loc, msg);
   }
 }
 
-class Expression extends ASTNode {
+type Value = any;
 
-  type: any;
+abstract class Expression extends ASTNode {
 
-  constructor(loc, instrLoc) {
+  type: Type|undefined;
+
+  constructor(loc: Loc, instrLoc: Loc) {
     super(loc, instrLoc);
   }
 
-  check_(env) {
+  check_(env: Scope) {
     this.type = this.check(env);
     return this.type;
   }
-  check(env: any): any {
+  check(env: Scope): Type {
     throw new Error("Method not implemented.");
   }
 
-  checkAgainst(env, targetType) {
+  checkAgainst(env: Scope, targetType: Type) {
     let t = this.check_(env);
     if (targetType instanceof ReferenceType && t == nullType)
       return;
@@ -334,26 +352,28 @@ class Expression extends ASTNode {
       this.executionError("Expression has type " + t + ", but an expression of type " + targetType + " was expected");
   }
   
-  async evaluateBinding(env, allowReadOnly?): Promise<(pop?: (number) => void) => any> {
+  async evaluateBinding(env: Scope, allowReadOnly?: boolean): Promise<(pop?: (nbOperands: number) => Value[]) => any> {
     this.executionError("This expression cannot appear on the left-hand side of an assignment");
   }
 
-  push(value) {
+  push(value: Value) {
     push(new OperandBinding(this, value));
   }
+
+  abstract evaluate(env: Scope): Promise<Value>;
 }
 
 class IntLiteral extends Expression {
 
-  constructor(loc, public value, public silent?) {
+  constructor(loc: Loc, public value: number, public silent?: boolean) {
     super(loc, loc);
   }
 
-  check(env) {
+  check(env: Scope) {
     return intType;
   }
 
-  async evaluate(env) {
+  async evaluate(env: Scope) {
     if (this.silent !== true)
       await this.breakpoint();
     this.push(+this.value);
@@ -362,15 +382,15 @@ class IntLiteral extends Expression {
 
 class BooleanLiteral extends Expression {
 
-  constructor(loc, public value, public silent?) {
+  constructor(loc: Loc, public value: boolean, public silent?: boolean) {
     super(loc, loc);
   }
 
-  check(env) {
+  check(env: Scope) {
     return booleanType;
   }
 
-  async evaluate(env) {
+  async evaluate(env: Scope) {
     if (this.silent !== true)
       await this.breakpoint();
     this.push(this.value);
@@ -378,15 +398,15 @@ class BooleanLiteral extends Expression {
 }
 
 class NullLiteral extends Expression {
-  constructor(loc) {
+  constructor(loc: Loc) {
     super(loc, loc);
   }
 
-  check(env) {
+  check(env: Scope) {
     return nullType;
   }
 
-  async evaluate(env) {
+  async evaluate(env: Scope) {
     await this.breakpoint();
     this.push(null);
   }
@@ -394,11 +414,11 @@ class NullLiteral extends Expression {
 
 class UnaryOperatorExpression extends Expression {
 
-  constructor(loc, instrLoc, public operator, public operand) {
+  constructor(loc: Loc, instrLoc: Loc, public operator: string, public operand: Expression) {
     super(loc, instrLoc);
   }
 
-  check(env) {
+  check(env: Scope) {
     switch (this.operator) {
       case 'not':
         this.operand.checkAgainst(env, booleanType);
@@ -408,7 +428,7 @@ class UnaryOperatorExpression extends Expression {
     }
   }
 
-  eval(v) {
+  eval(v: Value) {
     switch (this.operator) {
       case 'not': return !v;
       default:
@@ -416,7 +436,7 @@ class UnaryOperatorExpression extends Expression {
     }
   }
 
-  async evaluate(env) {
+  async evaluate(env: Scope) {
     await this.operand.evaluate(env);
     await this.breakpoint();
     let [v] = pop(1);
@@ -426,11 +446,11 @@ class UnaryOperatorExpression extends Expression {
 
 class BinaryOperatorExpression extends Expression {
 
-  constructor(loc, instrLoc, public leftOperand, public operator, public rightOperand) {
+  constructor(loc: Loc, instrLoc: Loc, public leftOperand: Expression, public operator: string, public rightOperand: Expression) {
     super(loc, instrLoc);
   }
 
-  check(env) {
+  check(env: Scope) {
     switch (this.operator) {
       case '+':
       case '-':
@@ -468,7 +488,7 @@ class BinaryOperatorExpression extends Expression {
     }
   }
 
-  eval(v1, v2) {
+  eval(v1: Value, v2: Value) {
     switch (this.operator) {
       case '+': return (v1 + v2)|0;
       case '-': return (v1 - v2)|0;
@@ -491,7 +511,7 @@ class BinaryOperatorExpression extends Expression {
     }
   }
   
-  async evaluate(env) {
+  async evaluate(env: Scope) {
     await this.leftOperand.evaluate(env);
     if (this.operator == '&&' || this.operator == '||') {
       await this.breakpoint();
@@ -511,19 +531,19 @@ class BinaryOperatorExpression extends Expression {
 
 class VariableExpression extends Expression {
 
-  constructor(loc, public name) {
+  constructor(loc: Loc, public name: string) {
     super(loc, loc);
   }
 
-  check(env) {
+  check(env: Scope) {
     return env.lookup(this.loc, this.name).declaration.type.type;
   }
   
-  async evaluateBinding(env, allowReadOnly?) {
+  async evaluateBinding(env: Scope, allowReadOnly?: boolean) {
     return () => env.lookup(this.loc, this.name, !allowReadOnly);
   }
   
-  async evaluate(env) {
+  async evaluate(env: Scope) {
     await this.breakpoint();
     this.push(env.lookup(this.loc, this.name).value);
   }
@@ -533,15 +553,15 @@ class AssignmentExpression extends Expression {
 
   declaration: any;
 
-  constructor(loc, instrLoc, public lhs, public op, public rhs) {
+  constructor(loc: Loc, instrLoc: Loc, public lhs: Expression, public op: string, public rhs: Expression) {
     super(loc, instrLoc);
     this.declaration = null;
   }
 
-  check(env) {
+  check(env: Scope) {
     if (this.op == '=') {
       if (this.lhs instanceof VariableExpression && env.tryLookup(this.lhs.name) == null) {
-        this.declaration = new VariableDeclarationStatement(this.loc, this.instrLoc, new ImplicitTypeExpression(), this.lhs.loc, this.lhs.name, this.rhs);
+        this.declaration = new VariableDeclarationStatement(this.loc, this.instrLoc!, new ImplicitTypeExpression(), this.lhs.loc, this.lhs.name, this.rhs);
         this.declaration.check(env);
         return voidType;
       }
@@ -555,7 +575,7 @@ class AssignmentExpression extends Expression {
     }
   }
 
-  evaluateOperator(lhs, rhs) {
+  evaluateOperator(lhs: Value, rhs: Value) {
     switch (this.op) {
       case '=': return rhs;
       case '+=': return (lhs + rhs)|0;
@@ -574,7 +594,7 @@ class AssignmentExpression extends Expression {
     }
   }
   
-  async evaluate(env) {
+  async evaluate(env: Scope) {
     if (this.declaration) {
       await this.declaration.execute(env);
       this.push(new OperandBinding(this, 'void'));
@@ -596,16 +616,16 @@ class AssignmentExpression extends Expression {
 
 class IncrementExpression extends Expression {
 
-  constructor(loc, instrLoc, public operand, public isDecrement, public isPostfix) {
+  constructor(loc: Loc, instrLoc: Loc, public operand: Expression, public isDecrement: boolean, public isPostfix: boolean) {
     super(loc, instrLoc);
   }
 
-  check(env) {
+  check(env: Scope) {
     this.operand.checkAgainst(env, intType);
     return intType;
   }
 
-  async evaluate(env) {
+  async evaluate(env: Scope) {
     let bindingThunk = await this.operand.evaluateBinding(env);
     await this.breakpoint();
     let lhs = bindingThunk(pop);
@@ -619,7 +639,7 @@ class IncrementExpression extends Expression {
 }
 
 let objectsCount = 0;
-let objectsShown = [];
+let objectsShown: any[] = [];
 
 function collectGarbage() {
   for (let o of objectsShown)
@@ -639,7 +659,7 @@ function collectGarbage() {
 }
 
 function computeNextObjectY() {
-  let svg = document.getElementById('arrows-svg');
+  let svg = document.getElementById('arrows-svg')!;
   let svgRect = svg.getClientRects()[0];
 
   let nextObjectY = 0;
@@ -652,8 +672,8 @@ function computeNextObjectY() {
   return nextObjectY;
 }
 
-function createHeapObjectDOMNode(object) {
-  let heap = document.getElementById('heap');
+function createHeapObjectDOMNode(object: JavaObject) {
+  let heap = document.getElementById('heap')!;
   let node = document.createElement('table');
   heap.appendChild(node);
   node.className = 'object-table';
@@ -663,13 +683,13 @@ function createHeapObjectDOMNode(object) {
     event0.preventDefault();
     let left0 = node.offsetLeft;
     let top0 = node.offsetTop;
-    let moveListener = event => {
+    let moveListener = (event: MouseEvent) => {
       event.preventDefault();
       node.style.left = (left0 + event.x - event0.x) + "px";
       node.style.top = (top0 + event.y - event0.y) + "px";
       updateArrows();
     };
-    let upListener = event => {
+    let upListener = (event: MouseEvent) => {
       document.removeEventListener('mousemove', moveListener);
       document.removeEventListener('mouseup', upListener);
     };
@@ -709,14 +729,14 @@ function updateFieldArrows() {
 
 class FieldBinding {
 
-  arrow = null;
+  arrow: SVGLineElement|null = null;
   valueCell: any;
 
-  constructor(public value) {}
+  constructor(public value: Value) {}
   
-  setValue(value) {
+  setValue(value: Value) {
     if (this.arrow != null) {
-      this.arrow.parentNode.removeChild(this.arrow);
+      this.arrow.parentNode!.removeChild(this.arrow);
       this.arrow = null;
     }
     this.value = value;
@@ -742,7 +762,7 @@ class JavaObject {
   marked: any;
   domNode: any;
 
-  constructor(public type, public fields) {
+  constructor(public type: ReferenceType, public fields: {[index: string]: FieldBinding}) {
     this.domNode = createHeapObjectDOMNode(this);
   }
 
@@ -773,46 +793,46 @@ class JavaObject {
   }
 }
 
-function initialClassFieldBindings(class_) {
-  let fields = {};
+function initialClassFieldBindings(class_: Class) {
+  let fields: {[index: string]: FieldBinding} = {};
   for (let field in class_.fields)
     fields[field] = new FieldBinding(class_.fields[field].type.resolve().defaultValue());
   return fields;
 }
 
 class JavaClassObject extends JavaObject {
-  constructor(public class_) {
+  constructor(public class_: Class) {
     super(class_.type, initialClassFieldBindings(class_));
   }
 }
 
-function initialArrayFieldBindings(initialContents) {
-  let fields = {};
+function initialArrayFieldBindings(initialContents: Value[]) {
+  let fields: {[index: string]: FieldBinding} = {};
   for (let i = 0; i < initialContents.length; i++)
     fields[i] = new FieldBinding(initialContents[i]);
   return fields;
 }
 
 class ListObject extends JavaObject {
-  length: any;
-  constructor(elementType, initialContents) {
+  length: number;
+  constructor(elementType: Type, initialContents: Value[]) {
     super(new ListType(elementType), initialArrayFieldBindings(initialContents));
     this.length = initialContents.length;
   }
 }
 
 class NewExpression extends Expression {
-  constructor(loc, instrLoc, public className) {
+  constructor(loc: Loc, instrLoc: Loc, public className: string) {
     super(loc, instrLoc);
   }
 
-  check(env) {
+  check(env: Scope) {
     if (!has(classes, this.className))
       this.executionError("No such class: " + this.className);
     return classes[this.className].type;
   }
   
-  async evaluate(env) {
+  async evaluate(env: Scope) {
     await this.breakpoint();
     if (!has(classes, this.className))
       this.executionError("No such class: " + this.className);
@@ -821,59 +841,59 @@ class NewExpression extends Expression {
 }
 
 class NewArrayExpression extends Expression {
-  constructor(loc, instrLoc, public elementType, public lengthExpr) {
+  constructor(loc: Loc, instrLoc: Loc, public elementType: TypeExpression, public lengthExpr: Expression) {
     super(loc, instrLoc);
   }
 
-  check(env) {
+  check(env: Scope) {
     this.elementType.resolve();
     this.lengthExpr.checkAgainst(env, intType);
-    return new ListType(this.elementType.type);
+    return new ListType(this.elementType.type!);
   }
 
-  async evaluate(env) {
+  async evaluate(env: Scope) {
     await this.lengthExpr.evaluate(env);
     await this.breakpoint();
     let [length] = pop(1);
     if (length < 0)
       this.executionError("Negative array length");
     this.elementType.resolve();
-    this.push(new ListObject(this.elementType.type, Array(length).fill(this.elementType.type.defaultValue())));
+    this.push(new ListObject(this.elementType.type!, Array(length).fill(this.elementType.type!.defaultValue())));
   }
 }
 
 class ListExpression extends Expression {
-  constructor(loc, instrLoc, public elementType, public elementExpressions) {
+  constructor(loc: Loc, instrLoc: Loc, public elementType: TypeExpression, public elementExpressions: Expression[]) {
     super(loc, instrLoc);
   }
 
-  check(env) {
+  check(env: Scope) {
     this.elementType.resolve();
     for (let e of this.elementExpressions)
-      e.checkAgainst(env, this.elementType.type);
-    return new ListType(this.elementType.type);
+      e.checkAgainst(env, this.elementType.type!);
+    return new ListType(this.elementType.type!);
   }
 
-  async evaluate(env) {
+  async evaluate(env: Scope) {
     for (let e of this.elementExpressions)
       await e.evaluate(env);
     await this.breakpoint();
     let elements = pop(this.elementExpressions.length);
     this.elementType.resolve();
-    this.push(new ListObject(this.elementType.type, elements));
+    this.push(new ListObject(this.elementType.type!, elements));
   }
 }
 
 class ReadOnlyBinding {
-  constructor(public value) {}
+  constructor(public value: Value) {}
 }
 
 class SelectExpression extends Expression {
-  constructor(loc, instrLoc, public target, public selectorLoc, public selector) {
+  constructor(loc: Loc, instrLoc: Loc, public target: Expression, public selectorLoc: Loc, public selector: string) {
     super(loc, instrLoc);
   }
 
-  check(env) {
+  check(env: Scope) {
     let targetType = this.target.check_(env);
     if (targetType instanceof ListType) {
       if (this.selector != "length")
@@ -884,13 +904,13 @@ class SelectExpression extends Expression {
       this.executionError("Target expression must be of class type");
     if (!has(targetType.class_.fields, this.selector))
       this.executionError("Class " + targetType.class_.name + " does not have a field named '" + this.selector + "'");
-    return targetType.class_.fields[this.selector].type.type;
+    return targetType.class_.fields[this.selector].type.type!;
   }
   
-  async evaluateBinding(env, allowReadOnly?) {
+  async evaluateBinding(env: Scope, allowReadOnly?: boolean) {
     await this.target.evaluate(env);
-    return pop => {
-      let [target] = pop(1);
+    return (pop?: (nbOperands: number) => Value[]) => {
+      let [target] = pop!(1);
       if (target instanceof ListObject) {
         if (this.selector != "length")
           this.executionError(target + " does not have a field named '" + this.selector + "'");
@@ -906,7 +926,7 @@ class SelectExpression extends Expression {
     }
   }
   
-  async evaluate(env) {
+  async evaluate(env: Scope) {
     let bindingThunk = await this.evaluateBinding(env, true);
     await this.breakpoint();
     this.push(bindingThunk(pop).value);
@@ -914,11 +934,11 @@ class SelectExpression extends Expression {
 }
 
 class SubscriptExpression extends Expression {
-  constructor(loc, instrLoc, public target, public index) {
+  constructor(loc: Loc, instrLoc: Loc, public target: Expression, public index: Expression) {
     super(loc, instrLoc);
   }
 
-  check(env) {
+  check(env: Scope) {
     let targetType = this.target.check_(env);
     if (!(targetType instanceof ListType))
       this.executionError("Target of subscript expression must be of array type");
@@ -926,11 +946,11 @@ class SubscriptExpression extends Expression {
     return targetType.elementType;
   }
 
-  async evaluateBinding(env) {
+  async evaluateBinding(env: Scope) {
     await this.target.evaluate(env);
     await this.index.evaluate(env);
-    return pop => {
-      let [target, index] = pop(2);
+    return (pop?: (nbOperands: number) => Value[]) => {
+      let [target, index] = pop!(2);
       if (!(target instanceof ListObject))
         this.executionError(target + " is not an array");
       if (index < 0)
@@ -941,7 +961,7 @@ class SubscriptExpression extends Expression {
     }
   }
 
-  async evaluate(env) {
+  async evaluate(env: Scope) {
     let bindingThunk = await this.evaluateBinding(env);
     await this.breakpoint();
     this.push(bindingThunk(pop).value);
@@ -950,12 +970,12 @@ class SubscriptExpression extends Expression {
 
 class CallExpression extends Expression {
   arguments: any;
-  constructor(loc, instrLoc, public callee, args) {
+  constructor(loc: Loc, instrLoc: Loc, public callee: Expression, args: Expression[]) {
     super(loc, instrLoc);
     this.arguments = args;
   }
 
-  check(env) {
+  check(env: Scope) {
     if (this.callee instanceof VariableExpression) {
       if (!has(toplevelMethods, this.callee.name))
         this.executionError("No such method: " + this.callee.name);
@@ -964,11 +984,12 @@ class CallExpression extends Expression {
         this.executionError("Incorrect number of arguments");
       for (let i = 0; i < this.arguments.length; i++)
         this.arguments[i].checkAgainst(env, method.parameterDeclarations[i].type.type);
-      return method.returnType.type;
-    }
+      return method.returnType.type!;
+    } else
+      this.executionError("The callee expression must be a method name");
   }
 
-  async evaluate(env) {
+  async evaluate(env: Scope) {
     if (this.callee instanceof VariableExpression) {
       if (!has(toplevelMethods, this.callee.name))
         this.executionError("No such method: " + this.callee.name);
@@ -985,7 +1006,7 @@ class CallExpression extends Expression {
   }
 }
 
-class Type {
+abstract class Type {
   constructor() {}
   toHTML() {
     let text = this.toString();
@@ -993,26 +1014,27 @@ class Type {
       return "<span class='keyword'>" + text + "</span>";
     return text;
   }
-  unwrapInferredType() {
-    let t = this;
+  unwrapInferredType(): Type {
+    let t: Type = this;
     while (t instanceof InferredType && t.type != null)
       t = t.type;
     return t;
   }
-  equals(other) {
+  equals(other: Type): boolean {
     other = other.unwrapInferredType();
     if (other instanceof InferredType)
       return other.equals(this);
     return this == other;
   }
+  abstract defaultValue(): Value;
 }
 
 class InferredType extends Type {
-  type = null;
+  type: Type|null = null;
   constructor() {
     super();
   }
-  equals(other) {
+  equals(other: Type): boolean {
     other = other.unwrapInferredType();
     if (this == other)
       return true;
@@ -1024,6 +1046,7 @@ class InferredType extends Type {
   toString() {
     return this.type == null ? "?" : this.type.toString();
   }
+  defaultValue() { return this.type ? this.type.defaultValue() : null; }
 }
 
 class AnyType extends Type {
@@ -1045,6 +1068,7 @@ let intType = new IntType();
 class VoidType extends Type {
   constructor() { super(); }
   toString() { return "void"; }
+  defaultValue() { return null; }
 }
 
 let voidType = new VoidType();
@@ -1070,19 +1094,19 @@ class NullType extends ReferenceType {
 let nullType = new NullType();
 
 class ClassType extends ReferenceType {
-  constructor(public class_) {
+  constructor(public class_: Class) {
     super();
   }
   toString() { return this.class_.name; }
 }
 
 class ListType extends ReferenceType {
-  constructor(public elementType) {
+  constructor(public elementType: Type) {
     super();
   }
   toString() { return "list"; }
   toHTML() { return "list"; }
-  equals(other) {
+  equals(other: Type): boolean {
     other = other.unwrapInferredType();
     if (other instanceof InferredType)
       return other.equals(this);
@@ -1090,16 +1114,18 @@ class ListType extends ReferenceType {
   }
 }
 
-class TypeExpression extends ASTNode {
-  constructor(loc) {
+abstract class TypeExpression extends ASTNode {
+  type: Type|undefined;
+  constructor(loc: Loc) {
     super(loc, loc);
   }
+  abstract resolve(): Type;
 }
 
 class ImplicitTypeExpression extends ASTNode {
   type: any;
-  constructor(type?) {
-    super(null, null);
+  constructor(type?: Type) {
+    super(null as unknown as Loc, null as unknown as Loc);
     this.type = type || intType;
   }
   resolve() {
@@ -1108,7 +1134,7 @@ class ImplicitTypeExpression extends ASTNode {
 }
 
 class LiteralTypeExpression extends TypeExpression {
-  constructor(loc, public type) {
+  constructor(loc: Loc, public type: Type) {
     super(loc);
   }
   resolve() {
@@ -1117,21 +1143,19 @@ class LiteralTypeExpression extends TypeExpression {
 }
 
 class ClassTypeExpression extends TypeExpression {
-  type: any;
-  constructor(loc, public name) {
+  constructor(loc: Loc, public name: string) {
     super(loc);
   }
   resolve() {
     if (!has(classes, this.name))
       throw new LocError(this.loc, "No such class");
-    return this.type = classes[this.name].type;;
+    return this.type = classes[this.name].type;
   }
 }
 
 class ArrayTypeExpression extends TypeExpression {
   elementType: any;
-  type: ListType;
-  constructor(loc, public elementTypeExpression) {
+  constructor(loc: Loc, public elementTypeExpression: TypeExpression) {
     super(loc);
   }
   resolve() {
@@ -1141,26 +1165,28 @@ class ArrayTypeExpression extends TypeExpression {
   }
 }
 
-class Statement extends ASTNode {
-  constructor(loc, instrLoc) {
+abstract class Statement extends ASTNode {
+  constructor(loc: Loc, instrLoc: Loc) {
     super(loc, instrLoc);
   }
+  abstract check(env: Scope): void
+  abstract execute(env: Scope): Promise<Value>
 }
 
 class VariableDeclarationStatement extends Statement {
-  constructor(loc, instrLoc, public type, public nameLoc, public name, public init) {
+  constructor(loc: Loc, instrLoc: Loc, public type: TypeExpression, public nameLoc: Loc, public name: string, public init: Expression) {
     super(loc, instrLoc);
   }
 
-  check(env) {
+  check(env: Scope) {
     this.type.resolve();
     if (env.tryLookup(this.name) != null)
       throw new ExecutionError(this.nameLoc, "Variable '" + this.name + "' already exists in this scope.");
-    this.init.checkAgainst(env, this.type.type);
+    this.init.checkAgainst(env, this.type.type!);
     env.bindings[this.name] = new LocalBinding(this, this.type.type);
   }
   
-  async execute(env) {
+  async execute(env: Scope) {
     if (env.tryLookup(this.name) != null)
       throw new ExecutionError(this.nameLoc, "Variable '"+this.name+"' already exists in this scope.");
     await this.init.evaluate(env);
@@ -1171,26 +1197,26 @@ class VariableDeclarationStatement extends Statement {
 }
 
 class ExpressionStatement extends Statement {
-  constructor(loc, instrLoc, public expr) {
+  constructor(loc: Loc, instrLoc: Loc, public expr: Expression) {
     super(loc, instrLoc);
   }
 
-  check(env) {
+  check(env: Scope) {
     this.expr.check_(env);
   }
   
-  async execute(env) {
+  async execute(env: Scope) {
     await this.expr.evaluate(env);
     pop(1);
   }
 }
 
 class ReturnStatement extends Statement {
-  constructor(loc, instrLoc, public operand?) {
+  constructor(loc: Loc, instrLoc: Loc, public operand?: Expression|null) {
     super(loc, instrLoc);
   }
 
-  check(env) {
+  check(env: Scope) {
     let resultType = env.tryLookup("#result");
     if (resultType == null)
       this.executionError("Cannot return here");
@@ -1202,7 +1228,7 @@ class ReturnStatement extends Statement {
     }
   }
 
-  async execute(env) {
+  async execute(env: Scope) {
     if (this.operand != null) {
       await this.operand.evaluate(env);
       await this.breakpoint();
@@ -1215,17 +1241,17 @@ class ReturnStatement extends Statement {
 }
 
 class BlockStatement extends Statement {
-  constructor(loc, public stmts) {
+  constructor(loc: Loc, public stmts: Statement[]) {
     super(loc, loc);
   }
 
-  check(env) {
+  check(env: Scope) {
     let scope = new Scope(env);
     for (let stmt of this.stmts)
       stmt.check(scope);
   }
 
-  async execute(env) {
+  async execute(env: Scope) {
     let scope = new Scope(env);
     callStack[callStack.length - 1].env = scope;
     let result;
@@ -1242,16 +1268,16 @@ class BlockStatement extends Statement {
 let iterationCount = 0;
 
 class WhileStatement extends Statement {
-  constructor(loc, instrLoc, public condition, public body) {
+  constructor(loc: Loc, instrLoc: Loc, public condition: Expression, public body: Statement) {
     super(loc, instrLoc);
   }
 
-  check(env) {
+  check(env: Scope) {
     this.condition.checkAgainst(env, booleanType);
     this.body.check(env);
   }
 
-  async execute(env) {
+  async execute(env: Scope) {
     let result;
     while (result === undefined) {
       iterationCount++;
@@ -1269,18 +1295,18 @@ class WhileStatement extends Statement {
 }
 
 class IfStatement extends Statement {
-  constructor(loc, instrLoc, public condition, public thenBody, public elseBody) {
+  constructor(loc: Loc, instrLoc: Loc, public condition: Expression, public thenBody: Statement, public elseBody: Statement|null) {
     super(loc, instrLoc);
   }
 
-  check(env) {
+  check(env: Scope) {
     this.condition.checkAgainst(env, booleanType);
     this.thenBody.check(env);
     if (this.elseBody != null)
       this.elseBody.check(env);
   }
 
-  async execute(env) {
+  async execute(env: Scope) {
     await this.condition.evaluate(env);
     await this.breakpoint();
     let [b] = pop(1);
@@ -1292,15 +1318,15 @@ class IfStatement extends Statement {
 }
 
 class AssertStatement extends Statement {
-  constructor(loc, instrLoc, public condition, public comment) {
+  constructor(loc: Loc, instrLoc: Loc, public condition: Expression, public comment: Comment_|null) {
     super(loc, instrLoc);
   }
   
-  check(env) {
+  check(env: Scope) {
     this.condition.checkAgainst(env, booleanType);
   }
   
-  async execute(env) {
+  async execute(env: Scope) {
     await this.condition.evaluate(env);
     await this.breakpoint();
     let [b] = pop(1);
@@ -1310,14 +1336,14 @@ class AssertStatement extends Statement {
 }
 
 class Declaration extends ASTNode {
-  constructor(loc) {
+  constructor(loc: Loc, public name: string) {
     super(loc, null);
   }
 }
 
 class ParameterDeclaration extends Declaration {
-  constructor(loc, public type, public nameLoc, public name) {
-    super(loc);
+  constructor(loc: Loc, public type: TypeExpression, public nameLoc: Loc, name: string) {
+    super(loc, name);
   }
 
   check() {
@@ -1327,10 +1353,20 @@ class ParameterDeclaration extends Declaration {
 
 let maxCallStackDepth = 100;
 
-class MethodDeclaration extends Declaration {
+abstract class AbstractMethodDeclaration extends Declaration {
+  constructor(loc: Loc, public returnType: TypeExpression, name: string, public parameterDeclarations: ParameterDeclaration[]) {
+    super(loc, name);
+  }
+  abstract call(callExpr: Expression, args: Value[]): Promise<Value>;
+  abstract enter(): void;
+  abstract check(): void;
+  abstract checkProofOutlines(): void;
+}
+
+class MethodDeclaration extends AbstractMethodDeclaration {
   implicitReturnStmt: ReturnStatement;
-  constructor(loc, public returnType, public nameLoc, public name, public parameterDeclarations, public bodyBlock) {
-    super(loc);
+  constructor(loc: Loc, returnType: TypeExpression, public nameLoc: Loc, name: string, parameterDeclarations: ParameterDeclaration[], public bodyBlock: Statement[]) {
+    super(loc, returnType, name, parameterDeclarations);
     let closeBraceLoc = new Loc(loc.doc, loc.end - 1, loc.end);
     this.implicitReturnStmt = new ReturnStatement(closeBraceLoc, closeBraceLoc);
   }
@@ -1353,7 +1389,7 @@ class MethodDeclaration extends Declaration {
       stmt.check(env);
   }
 
-  async call(callExpr, args) {
+  async call(callExpr: CallExpression, args: Value[]) {
     let env = new Scope(null);
     if (callStack.length >= maxCallStackDepth)
       throw new LocError(callExpr.loc, "Maximum call stack depth (= " + maxCallStackDepth + ") exceeded");
@@ -1393,8 +1429,8 @@ class MethodDeclaration extends Declaration {
         }
         if (stmt.comment.text.includes('POSTCONDITION')) {
           if (outlineStart == null)
-            stmt.executionError("POSTCONDITION without PRECONDITION");
-          checkProofOutline(outlineStartEnv, this.bodyBlock.slice(outlineStart, i + 1));
+            return stmt.executionError("POSTCONDITION without PRECONDITION");
+          checkProofOutline(outlineStartEnv!, this.bodyBlock.slice(outlineStart, i + 1));
           outlineStart = null;
           outlineStartEnv = null;
         }
@@ -1403,7 +1439,7 @@ class MethodDeclaration extends Declaration {
   }
 }
 
-function parseProofOutlineExpression(e) {
+function parseProofOutlineExpression(e: Expression): Term_ {
   if (e instanceof IntLiteral)
     return Val(e.loc, +e.value);
   else if (e instanceof BooleanLiteral)
@@ -1449,10 +1485,10 @@ class JustificationScanner {
   pos = -1;
   c: any;
   tokenStart: any;
-  value: number;
+  value: number|null = null;
   token: any;
 
-  constructor(public comment) {
+  constructor(public comment: Comment_) {
     this.text = this.comment.text;
     this.eat();
   }
@@ -1503,7 +1539,7 @@ class JustificationScanner {
     return this.token;
   }
 
-  expect(token) {
+  expect(token: string) {
     if (this.token != token)
       this.error(`'${token}' expected`);
     const value = this.value;
@@ -1515,20 +1551,20 @@ class JustificationScanner {
     return this.comment.locFactory(this.comment.start + this.tokenStart, this.comment.start + this.pos);
   }
 
-  error(msg) {
+  error(msg: string): never {
     throw new LocError(this.loc(), msg);
   }
 }
 
-function expectConjunctIndex(scanner) {
+function expectConjunctIndex(scanner: JustificationScanner) {
   const lk = scanner.loc();
-  const k = scanner.expect('<NUMBER>');
+  const k = scanner.expect('<NUMBER>')!;
   if (k == 0)
     throw new LocError(lk, "Conjunct index must be positive");
   return k - 1;
 }
 
-function parseJustification(scanner) {
+function parseJustification(scanner: JustificationScanner) {
   switch (scanner.token) {
     case 'Z': {
       const l = scanner.loc();
@@ -1557,7 +1593,7 @@ function parseJustification(scanner) {
         const l = scanner.loc();
         const lawName = scanner.token;
         scanner.nextToken();
-        const ks = [];
+        const ks: [Loc, number][] = [];
         if (scanner.token == 'op') {
           scanner.expect('op');
           for (;;) {
@@ -1575,7 +1611,7 @@ function parseJustification(scanner) {
   }
 }
 
-function parseJustifications(comment) {
+function parseJustifications(comment: Comment_) {
   const scanner = new JustificationScanner(comment);
   scanner.nextToken();
   if (scanner.token == '<EOF>')
@@ -1593,27 +1629,27 @@ function parseJustifications(comment) {
   return result;
 }
 
-function parseProofOutline(stmts, i, precededByAssert) {
+function parseProofOutline(stmts: Statement[], i: number, precededByAssert: boolean): Stmt_ {
   if (stmts.length == i)
-    return Pass(null);
+    return Pass(null as unknown as Loc);
   const stmt = stmts[i];
   if (stmt instanceof AssertStatement) {
     const body = parseProofOutlineExpression(stmt.condition);
-    const justif = precededByAssert ? parseJustifications(stmt.comment) : JustifNil;
+    const justif = precededByAssert && stmt.comment != null ? parseJustifications(stmt.comment) : JustifNil;
     return Seq(Assert(stmt.loc, body, justif), parseProofOutline(stmts, i + 1, true));
   } else if (stmt instanceof ExpressionStatement && stmt.expr instanceof AssignmentExpression && stmt.expr.op == '=' && stmt.expr.lhs instanceof VariableExpression) {
     return Seq(Assign(stmt.loc, stmt.expr.lhs.name, parseProofOutlineExpression(stmt.expr.rhs)), parseProofOutline(stmts, i + 1, false));
   } else if (stmt instanceof WhileStatement) {
     const cond = parseProofOutlineExpression(stmt.condition);
     if (!(stmt.body instanceof BlockStatement))
-      stmt.body.executionError("In a proof outline, the body of a loop must be a block.");
+      return stmt.body.executionError("In a proof outline, the body of a loop must be a block.");
     const body = parseProofOutline(stmt.body.stmts, 0, false);
     return Seq(While(stmt.loc, cond, body), parseProofOutline(stmts, i + 1, false));
   } else
-    stmt.executionError("This statement form is not yet supported in a proof outline.");
+    return stmt.executionError("This statement form is not yet supported in a proof outline.");
 }
 
-function checkProofOutline(env, stmts) {
+function checkProofOutline(env: Env_, stmts: Statement[]) {
   const outline = parseProofOutline(stmts, 0, false);
   if (!stmt_is_well_typed(env, outline))
     throw new LocError(new Loc(stmts[0].loc.doc, stmts[0].loc.start, stmts[stmts.length - 1].loc.end), "Proof outline is not well-typed");
@@ -1623,11 +1659,13 @@ function checkProofOutline(env, stmts) {
   nbProofOutlinesChecked++;
 }
 
-class BuiltInMethodDeclaration {
-  constructor(public parameterDeclarations, public body) {}
+class BuiltInMethodDeclaration extends AbstractMethodDeclaration {
+  constructor(returnType: TypeExpression, name: string, parameterDeclarations: ParameterDeclaration[], public body: (callExpr: CallExpression, args: Value[]) => Promise<Value>) {
+    super(null as unknown as Loc, returnType, name, parameterDeclarations);
+  }
   enter() {}
   check() {}
-  async call(callExpr, args) {
+  async call(callExpr: CallExpression, args: Value[]) {
     let result = await this.body(callExpr, args);
     push(new OperandBinding(callExpr, result));
   }
@@ -1635,8 +1673,8 @@ class BuiltInMethodDeclaration {
 }
 
 class FieldDeclaration extends Declaration {
-  constructor(loc, public type, public name) {
-    super(loc);
+  constructor(loc: Loc, public type: TypeExpression, name: string) {
+    super(loc, name);
   }
 
   enter() {
@@ -1646,9 +1684,9 @@ class FieldDeclaration extends Declaration {
 
 class Class extends Declaration {
   type: ClassType;
-  fields = {};
-  constructor(loc, public name, fields) {
-    super(loc);
+  fields: {[index: string]: FieldDeclaration} = {};
+  constructor(loc: Loc, name: string, fields: FieldDeclaration[]) {
+    super(loc, name);
     this.type = new ClassType(this);
     for (let field of fields) {
       if (has(this.fields, field.name))
@@ -1664,27 +1702,27 @@ class Class extends Declaration {
 }
 
 class Loc {
-  constructor(public doc, public start, public end) {}
+  constructor(public doc: any, public start: number, public end: number) {}
 }
 
-function mkLocFactory(doc) {
-  return (start, end) => new Loc(doc, start, end);
+function mkLocFactory(doc: any) {
+  return (start: number, end: number) => new Loc(doc, start, end);
 }
 
 class LocError extends Error {
-  constructor(public loc, public msg) {
+  constructor(public loc: Loc, public msg: string) {
     super();
   }
 }
 
 class ParseError extends LocError {
-  constructor(loc, msg) {
+  constructor(loc: Loc, msg: string) {
     super(loc, msg);
   }
 }
 
 class ExecutionError extends LocError {
-  constructor(loc, msg) {
+  constructor(loc: Loc, msg: string) {
     super(loc, msg);
   }
 }
@@ -1697,7 +1735,7 @@ class Parser {
   lastPos: any;
   lastValue: any;
 
-  constructor(public locFactory, text, parseExpression?, commentListener?) {
+  constructor(public locFactory: LocFactory, text: string, parseExpression?: boolean, commentListener?: (comment: Comment_) => void) {
     this.scanner = new Scanner(locFactory, text, parseExpression, commentListener);
     this.token = this.scanner.nextToken();
     this.posStack = [];
@@ -1719,7 +1757,7 @@ class Parser {
     return this.locFactory(this.scanner.tokenStart, this.scanner.pos);
   }
 
-  parseError(msg) {
+  parseError(msg: string): never {
     throw new ParseError(this.tokenLoc(), msg);
   }
 
@@ -1729,14 +1767,14 @@ class Parser {
     this.token = this.scanner.nextToken();
   }
 
-  expect(token) {
+  expect(token: string) {
     if (this.token != token)
       this.parseError((token == 'EOF' ? "end of input " : token) + " expected");
     this.next();
     return this.lastValue;
   }
 
-  parsePrimaryExpression() {
+  parsePrimaryExpression(): Expression {
     this.pushStart();
     switch (this.token) {
       case "NUMBER":
@@ -1765,9 +1803,9 @@ class Parser {
       case "new":
         this.next();
         let instrLoc = this.dupLoc();
-        let type = this.tryParsePrimaryType();
+        let type: TypeExpression|null = this.tryParsePrimaryType();
         if (type == null)
-          this.parseError("Type expected");
+          return this.parseError("Type expected");
         if (this.token == '[') {
           this.next();
           let lengthExpr = null;
@@ -1850,7 +1888,7 @@ class Parser {
         return new UnaryOperatorExpression(this.popLoc(), instrLoc, op, e);
       }
       default:
-        this.parseError("Number or identifier expected");
+        return this.parseError("Number or identifier expected");
     }
   }
   
@@ -1976,7 +2014,7 @@ class Parser {
     }
   }
   
-  parseConjunction() {
+  parseConjunction(): Expression {
     this.pushStart();
     let e = this.parseRelationalExpression();
     if (this.token == 'and') {
@@ -1991,7 +2029,7 @@ class Parser {
     }
   }
   
-  parseDisjunction() {
+  parseDisjunction(): Expression {
     this.pushStart();
     let e = this.parseConjunction();
     if (this.token == 'or') {
@@ -2006,7 +2044,7 @@ class Parser {
     }
   }
   
-  parseAssignmentExpression() {
+  parseAssignmentExpression(): Expression {
     this.pushStart();
     let e = this.parseDisjunction();
     switch (this.token) {
@@ -2068,7 +2106,7 @@ class Parser {
   
   tryParseType() {
     this.pushStart();
-    let type = this.tryParsePrimaryType();
+    let type: TypeExpression|null = this.tryParsePrimaryType();
     if (type == null) {
       this.popLoc();
       return null;
@@ -2089,7 +2127,7 @@ class Parser {
     return type;
   }
 
-  parseSuite() {
+  parseSuite(): BlockStatement {
     this.pushStart();
     this.expect('EOL');
     this.expect('INDENT');
@@ -2153,7 +2191,7 @@ class Parser {
     return new ExpressionStatement(this.popLoc(), instrLoc, e);
   }
   
-  parseStatements(terminators) {
+  parseStatements(terminators: {[index: string]: boolean}) {
     let statements = [];
     while (!(this.token in terminators)) {
       let stmt = this.parseStatement();
@@ -2188,7 +2226,7 @@ class Parser {
     return new FieldDeclaration(this.popLoc(), type, x);
   }
   
-  parseDeclaration() {
+  parseDeclaration(): Declaration {
     this.pushStart();
     switch (this.token) {
       case 'class':
@@ -2225,6 +2263,8 @@ class Parser {
         let body = this.parseSuite();
         let type = new ImplicitTypeExpression();
         return new MethodDeclaration(this.popLoc(), type, nameLoc, name, parameters, body.stmts);
+      default:
+        this.parseError("'class' or 'def' expected");
     }
   }
   
@@ -2236,38 +2276,38 @@ class Parser {
   }
 }
 
-function parseDeclarations(locFactory, text, parseComment) {
+function parseDeclarations(locFactory: LocFactory, text: string, parseComment: (comment: Comment_) => void) {
   const parser = new Parser(locFactory, text, false, parseComment);
   return parser.parseDeclarations();
 }
 
-function parseStatements(locFactory, text) {
+function parseStatements(locFactory: LocFactory, text: string) {
   const parser = new Parser(locFactory, text);
   return parser.parseStatements({'EOF': true});
 }
 
-function parseExpression(locFactory, text) {
+function parseExpression(locFactory: LocFactory, text: string) {
   const parser = new Parser(locFactory, text, true);
   const result = parser.parseExpression();
   parser.expect('EOF');
   return result;
 }
 
-let lastCheckedDeclarations = null;
-let classes;
-let toplevelMethods;
-let lawComments;
-let laws;
+let lastCheckedDeclarations: string|null = null;
+let classes: {[index: string]: Class};
+let toplevelMethods: {[index: string]: AbstractMethodDeclaration};
+let lawComments: Comment_[];
+let laws: {[index: string]: LawInfo};
 
-function checkDeclarations(declarations) {
+function checkDeclarations(declarations: Declaration[]) {
   classes = {};
   toplevelMethods = {};
-  toplevelMethods['len'] = new BuiltInMethodDeclaration(['l'], async (callExpr, args) => {
-    let arg = args[0];
-    if (!(arg instanceof ListObject))
-      throw new LocError(callExpr.loc, "len expects a list object");
-    return arg.length;
-  });
+  //toplevelMethods['len'] = new BuiltInMethodDeclaration([new ParameterDeclaration(null as unknown as Loc, new LiteralTypeExpression(null as unknown as Loc, intType), 'l'], async (callExpr, args) => {
+  //   let arg = args[0];
+  //   if (!(arg instanceof ListObject))
+  //     throw new LocError(callExpr.loc, "len expects a list object");
+  //   return arg.length;
+  // });
   for (let declaration of declarations) {
     if (declaration instanceof Class) {
       if (has(classes, declaration.name))
@@ -2276,7 +2316,7 @@ function checkDeclarations(declarations) {
     } else {
       if (has(toplevelMethods, declaration.name))
         throw new LocError(declaration.loc, "A method with the same name already exists");
-      toplevelMethods[declaration.name] = declaration;
+      toplevelMethods[declaration.name] = declaration as AbstractMethodDeclaration;
     }
   }
   for (let c in classes)
@@ -2287,9 +2327,9 @@ function checkDeclarations(declarations) {
     toplevelMethods[m].check();
 }
 
-let toplevelScope;
+let toplevelScope: Scope;
 let mainStackFrame;
-let callStack;
+let callStack: any;
 
 function resetMachine() {
   toplevelScope = new Scope(null);
@@ -2299,26 +2339,30 @@ function resetMachine() {
 
 resetMachine();
 
-function push(binding) {
+function push(binding: Binding) {
   callStack[callStack.length - 1].operands.push(binding);
 }
 
-function peek(N) {
+function peek(N: number) {
   let operands = callStack[callStack.length - 1].operands;
   let result = operands.slice(operands.length - N, operands.length);
-  return result.map(binding => binding.value);
+  return result.map((binding: Binding) => binding.value);
 }
 
-function pop(N) {
+function pop(N: number) {
   let operands = callStack[callStack.length - 1].operands;
   let result = operands.slice(operands.length - N, operands.length);
   operands.length -= N;
-  return result.map(binding => binding.value);
+  return result.map((binding: Binding) => binding.value);
 }
 
-let callStackArrows = []
+class CallStackArrow {
+  constructor(public arrow: SVGLineElement, public fromNode: HTMLElement, public toNode: HTMLElement) {}
+}
 
-function createArrow(fromNode, toNode) {
+let callStackArrows: CallStackArrow[] = []
+
+function createArrow(fromNode: HTMLElement, toNode: HTMLElement) {
   let svg = document.getElementById('arrows-svg') as unknown as SVGSVGElement;
   let arrow = document.createElementNS('http://www.w3.org/2000/svg','line');
   svg.appendChild(arrow);
@@ -2359,7 +2403,7 @@ function createArrow(fromNode, toNode) {
 
 function updateStackArrows() {
   for (let arrow of callStackArrows) {
-    arrow.arrow.parentNode.removeChild(arrow.arrow);
+    arrow.arrow.parentNode!.removeChild(arrow.arrow);
     arrow.arrow = createArrow(arrow.fromNode, arrow.toNode);
   }
 }
@@ -2371,10 +2415,10 @@ function updateArrows() {
 
 function updateCallStack() {
   for (let arrow of callStackArrows)
-    arrow.arrow.parentNode.removeChild(arrow.arrow);
+    arrow.arrow.parentNode!.removeChild(arrow.arrow);
   callStackArrows = [];
   
-  let callStackTable = document.getElementById('callstack');
+  let callStackTable = document.getElementById('callstack')!;
   while (callStackTable.firstChild != null)
     callStackTable.removeChild(callStackTable.firstChild);
   for (let stackFrame of callStack) {
@@ -2437,10 +2481,10 @@ function updateMachineView() {
   updateButtonStates();
 }
 
-let nbProofOutlinesChecked;
+let nbProofOutlinesChecked: number;
 
 class LawInfo {
-  constructor(public comment, public name, public law) {}
+  constructor(public comment: Comment_, public name: string, public law: Law_) {}
 }
 
 function checkLaws() {
@@ -2482,7 +2526,7 @@ function checkProofOutlines() {
 
 declare var statementsEditor: any;
 
-async function executeStatements(step) {
+async function executeStatements(step: boolean) {
   await handleError(async () => {
     parseDeclarationsBox();
     let stmtsText = statementsEditor.getValue();
@@ -2504,7 +2548,7 @@ function resetAndExecute() {
   executeStatements(false);
 }
 
-function getTextCoordsFromOffset(text, offset) {
+function getTextCoordsFromOffset(text: string, offset: number) {
   let line = 0;
   let lineStart = 0;
   for (;;) {
@@ -2516,7 +2560,7 @@ function getTextCoordsFromOffset(text, offset) {
   }
 }
 
-let errorWidgets = [];
+let errorWidgets: {clear(): void}[] = [];
 
 function clearErrorWidgets() {
   for (let widget of errorWidgets)
@@ -2524,7 +2568,7 @@ function clearErrorWidgets() {
   errorWidgets = [];
 }
 
-function addErrorWidget(editor, line, msg) {
+function addErrorWidget(editor: any, line: number, msg: string) {
   var widget = document.createElement("div");
   var icon = widget.appendChild(document.createElement("span"));
   icon.innerHTML = "!";
@@ -2534,7 +2578,7 @@ function addErrorWidget(editor, line, msg) {
   errorWidgets.push(editor.addLineWidget(line, widget, {coverGutter: false, noHScroll: true}));
 }
 
-async function handleError(body) {
+async function handleError(body: () => Promise<void>) {
   clearErrorWidgets();
   try {
     await body();
@@ -2567,7 +2611,7 @@ async function handleError(body) {
   }
 }
 
-function processComment(comment) {
+function processComment(comment: Comment_) {
   if (comment.isOnNewLine && comment.text.trim().startsWith('Wet '))
     lawComments.push(comment);
 }
@@ -2587,8 +2631,10 @@ function parseDeclarationsBox() {
   lastCheckedDeclarations = text;
 }
 
-class SyntheticVariableBinding {
-  constructor(public name, public value) {}
+class SyntheticVariableBinding extends Binding {
+  constructor(public name: string, public value: Value) {
+    super(value);
+  }
 
   getNameHTML() {
     return this.name;
@@ -2600,7 +2646,7 @@ let syntheticVariableCount = 0;
 declare var expressionEditor: any;
 declare var resultsEditor: any;
 
-async function evaluateExpression(step) {
+async function evaluateExpression(step: boolean) {
   await handleError(async () => {
     parseDeclarationsBox();
     let exprText = expressionEditor.getValue();
@@ -2628,25 +2674,25 @@ async function evaluateExpression(step) {
   updateMachineView();
 }
 
-function markLoc(loc, className) {
+function markLoc(loc: Loc, className: string) {
   let text = loc.doc.getValue();
   return loc.doc.markText(getTextCoordsFromOffset(text, loc.start), getTextCoordsFromOffset(text, loc.end), {className});
 }
 
-let currentNode = null;
-let currentBreakCondition = null;
-let currentInstructionMark = null;
-let resumeFunc = null;
+let currentNode: ASTNode|null = null;
+let currentBreakCondition: ((node: ASTNode) => boolean)|null = null;
+let currentInstructionMark: {clear(): void}|null = null;
+let resumeFunc: (() => void)|null = null;
 
-function checkBreakpoint(node) {
+function checkBreakpoint(node: ASTNode) {
   return new Promise<void>((resolve, reject) => {
-    if (currentBreakCondition(node)) {
+    if (currentBreakCondition!(node)) {
       currentNode = node;
       currentBreakCondition = null;
-      currentInstructionMark = markLoc(node.instrLoc, "current-instruction");
+      currentInstructionMark = markLoc(node.instrLoc!, "current-instruction");
       resumeFunc = () => {
         currentNode = null;
-        currentInstructionMark.clear();
+        currentInstructionMark!.clear();
         resolve();
       };
       updateMachineView();
@@ -2657,12 +2703,12 @@ function checkBreakpoint(node) {
 }
 
 function resume() {
-  let f = resumeFunc;
+  let f = resumeFunc!;
   resumeFunc = null;
   f();
 }
 
-function isDifferentLine(loc1, loc2) {
+function isDifferentLine(loc1: Loc, loc2: Loc) {
   if (loc1.doc != loc2.doc)
     return true;
   let text = loc1.doc.getValue();
@@ -2672,7 +2718,7 @@ function isDifferentLine(loc1, loc2) {
 }
 
 function step() {
-  let oldNode = currentNode;
+  let oldNode = currentNode!;
   let oldStackSize = callStack.length;
   let oldStackFrame = callStack[oldStackSize - 1];
   currentBreakCondition = node => {
@@ -2689,7 +2735,7 @@ function smallStep() {
 }
 
 function stepOver() {
-  let oldNode = currentNode;
+  let oldNode = currentNode!;
   let oldStackSize = callStack.length;
   let oldStackFrame = callStack[oldStackSize - 1];
   currentBreakCondition = node => {
@@ -2743,7 +2789,9 @@ function updateButtonStates() {
   (document.getElementById('continueButton') as HTMLButtonElement).disabled = !stepping;
 }
 
-const examples = [{
+type Example = {title: string, declarations: string, statements: string, expression: string};
+
+const examples: Example[] = [{
   title: 'Copy a number (partial correctness)',
   declarations:
 `def copy(n):
@@ -2894,7 +2942,7 @@ assert fac(4) == 24`,
 }
 ]
 
-function setExample(example) {
+function setExample(example: Example) {
   reset();
   declarationsEditor.setValue(example.declarations || "");
   statementsEditor.setValue(example.statements || "");

@@ -1,6 +1,7 @@
 {
     "compilerOptions": {
-        "target": "ESNext"
+        "target": "ESNext",
+        "strict": true
     },
     "files": [
         "pylearner.ts"
