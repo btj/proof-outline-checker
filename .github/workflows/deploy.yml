@@ -12,13 +12,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - uses: actions/setup-node@v2
 
     - name: Build
       run: |
         docker pull bartjacobs/coq-and-js_of_ocaml
         chmod -R ugo+rw .
-        docker run --rm -v `pwd`:/workdir bartjacobs/coq-and-js_of_ocaml bash -c 'cd /workdir && make'
+        docker run --rm -v `pwd`:/workdir bartjacobs/coq-and-js_of_ocaml bash -c 'cd /workdir && make proof_checker.js'
+        make pylearner.js
         node test.js
         mkdir dist
         cp index.html *.js dist
