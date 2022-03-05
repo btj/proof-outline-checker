@@ -1727,6 +1727,8 @@ class ExecutionError extends LocError {
   }
 }
 
+type RelationalChain = Expression | [Loc, Expression, string, RelationalChain];
+
 class Parser {
 
   scanner: Scanner;
@@ -1992,8 +1994,7 @@ class Parser {
     }
   }
 
-  parseRelationalExpression() {
-    this.pushStart();
+  parseRelationalChain(): RelationalChain {
     let e = this.parseAdditiveExpression();
     switch (this.token) {
       case '==':
@@ -2006,14 +2007,31 @@ class Parser {
         let op = this.token;
         this.next();
         let instrLoc = this.popLoc();
-        let rhs = this.parseAdditiveExpression();
-        return new BinaryOperatorExpression(this.popLoc(), instrLoc, e, op, rhs);
+        let rhs = this.parseRelationalChain();
+        return [instrLoc, e, op, rhs];
       default:
-        this.popLoc();
         return e;
     }
   }
-  
+
+  parseRelationalExpression() {
+    function expandChain([instrLoc, e, op, rhs]: [Loc, Expression, string, RelationalChain]): Expression {
+      if (rhs instanceof Array) {
+        const conjuncts = expandChain(rhs);
+        const e1 = rhs[1];
+        const conjunct = new BinaryOperatorExpression(new Loc(e.loc.doc, e.loc.start, e1.loc.end), instrLoc, e, op, e1);
+        const l = new Loc(e.loc.doc, e.loc.start, conjuncts.loc.end);
+        return new BinaryOperatorExpression(l, l, conjunct, '&&', conjuncts);
+      } else
+        return new BinaryOperatorExpression(new Loc(e.loc.doc, e.loc.start, rhs.loc.end), instrLoc, e, op, rhs);
+    }
+    const chain = this.parseRelationalChain();
+    if (chain instanceof Array)
+      return expandChain(chain);
+    else
+      return chain;
+  }
+
   parseConjunction(): Expression {
     this.pushStart();
     let e = this.parseRelationalExpression();
@@ -2823,7 +2841,7 @@ assert copy(7) == 7`,
 }, {
   title: 'Copy a number (alternative) (partial correctness)',
   declarations:
-`# Wet LeAntisym: x <= y and y <= x ==> x == y
+`# Wet LeAntisym: x <= y <= x ==> x == y
 
 def copy(n):
 
