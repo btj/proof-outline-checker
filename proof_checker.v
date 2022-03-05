@@ -19,13 +19,39 @@ Inductive term_equiv: term -> term -> Prop :=
   term_equiv ta1 tb1 ->
   term_equiv ta2 tb2 ->
   term_equiv (BinOp la op ta1 ta2) (BinOp lb op tb1 tb2)
+| Eq_equiv' la lb ta1 ta2 tb1 tb2:
+  term_equiv ta1 tb2 ->
+  term_equiv ta2 tb1 ->
+  term_equiv (BinOp la Eq ta1 ta2) (BinOp lb Eq tb1 tb2)
 | Not_equiv la lb ta tb:
   term_equiv ta tb ->
   term_equiv (Not la ta) (Not lb tb)
+| Const_equiv l1 l2 c:
+  term_equiv (Const l1 c) (Const l2 c)
+| App_equiv la lb ta1 ta2 tb1 tb2:
+  term_equiv ta1 tb1 ->
+  term_equiv ta2 tb2 ->
+  term_equiv (App la ta1 ta2) (App lb tb1 tb2)
 .
 
 Definition binop_eq_dec(o1 o2: binop): {o1 = o2} + {o1 <> o2}.
 decide equality.
+Defined.
+
+Definition const_eq_dec(c1 c2: const): {c1 = c2} + {c1 <> c2}.
+Proof.
+  destruct c1 as [n1 tp1].
+  destruct c2 as [n2 tp2].
+  destruct (string_dec n1 n2).
+  - subst.
+    destruct (type_eq_dec tp1 tp2).
+    + subst.
+      left.
+      reflexivity.
+    + right.
+      congruence.
+  - right.
+    congruence.
 Defined.
 
 Fixpoint term_equivb(t1 t2: term){struct t1}: bool :=
@@ -34,10 +60,16 @@ Fixpoint term_equivb(t1 t2: term){struct t1}: bool :=
   | Var _ x1, Var _ x2 => if string_dec x1 x2 then true else false
   | BinOp _ op1 ta1 tb1, BinOp _ op2 ta2 tb2 =>
     if binop_eq_dec op1 op2 then
-      term_equivb ta1 ta2 && term_equivb tb1 tb2
+      term_equivb ta1 ta2 && term_equivb tb1 tb2 ||
+      if binop_eq_dec op1 Eq then
+        term_equivb ta1 tb2 && term_equivb tb1 ta2
+      else
+        false
     else
       false
   | Not _ t1, Not _ t2 => term_equivb t1 t2
+  | Const _ c1, Const _ c2 => if const_eq_dec c1 c2 then true else false
+  | App _ f1 a1, App _ f2 a2 => term_equivb f1 f2 && term_equivb a1 a2
   | _, _ => false
   end.
 
@@ -54,12 +86,30 @@ Proof.
     subst.
     constructor.
   - destruct (binop_eq_dec op op0); try congruence. subst.
-    apply andb_prop in H.
+    apply Bool.orb_prop in H.
+    destruct H.
+    + apply andb_prop in H.
+      destruct H.
+      apply IHt1_1 in H.
+      apply IHt1_2 in H0.
+      constructor; assumption.
+    + destruct (binop_eq_dec op0 Eq).
+      * subst.
+        apply andb_prop in H.
+        destruct H.
+        apply IHt1_1 in H.
+        apply IHt1_2 in H0.
+        constructor; assumption.
+      * discriminate.
+  - apply IHt1 in H.
+    constructor; assumption.
+  - destruct (const_eq_dec c c0).
+    + subst. apply Const_equiv.
+    + discriminate.
+  - apply andb_prop in H.
     destruct H.
     apply IHt1_1 in H.
     apply IHt1_2 in H0.
-    constructor; assumption.
-  - apply IHt1 in H.
     constructor; assumption.
 Qed.
 
@@ -218,19 +268,19 @@ Proof.
 Qed.
 
 Fixpoint rewrites(lhs rhs t: term): list term :=
-  if term_equivb t lhs then
-    [rhs; t]
-  else if term_equivb t rhs then
-    [lhs; t]
-  else
-    match t with
-      BinOp l op t1 t2 =>
-      flat_map (fun t1' =>
-        map (fun t2' => BinOp l op t1' t2') (rewrites lhs rhs t2)
-      ) (rewrites lhs rhs t1)
-    | Not l t => map (fun t' => Not l t') (rewrites lhs rhs t)
-    | t => [t]
-    end.
+  (if term_equivb t lhs then [rhs] else if term_equivb t rhs then [lhs] else []) ++
+  match t with
+    BinOp l op t1 t2 =>
+    flat_map (fun t1' =>
+      map (fun t2' => BinOp l op t1' t2') (rewrites lhs rhs t2)
+    ) (rewrites lhs rhs t1)
+  | Not l t => map (fun t' => Not l t') (rewrites lhs rhs t)
+  | App l t1 t2 =>
+    flat_map (fun t1' =>
+      map (fun t2' => App l t1' t2') (rewrites lhs rhs t2)
+    ) (rewrites lhs rhs t1)
+  | t => [t]
+  end.
 
 Definition update(f: var -> option term)(x: var)(t: term)(y: var): option term :=
   if string_dec x y then Some t else f y.
@@ -247,7 +297,16 @@ Fixpoint match_term f c C :=
   | BinOp _ op t1 t2, BinOp _ op' t1' t2' =>
     if binop_eq_dec op op' then
       match match_term f t1 t1' with
-        None => None
+        None =>
+        match op with
+          Eq =>
+          match match_term f t1 t2' with
+            Some f =>
+            match_term f t2 t1'
+          | None => None
+          end
+        | _ => None
+        end
       | Some f =>
         match_term f t2 t2'
       end
@@ -255,6 +314,13 @@ Fixpoint match_term f c C :=
       None
   | Not _ t, Not _ t' =>
     match_term f t t'
+  | Const _ c, Const _ c' => if const_eq_dec c c' then Some f else None
+  | App _ tf ta, App _ tf' ta' =>
+    match match_term f tf tf' with
+      None => None
+    | Some f =>
+      match_term f ta ta'
+    end
   | _, _ => None
   end.
 
@@ -362,6 +428,8 @@ Fixpoint free_vars(t: term): list var :=
   | Val _ v => []
   | BinOp _ _ t1 t2 => free_vars t1 ++ free_vars t2
   | Not _ t => free_vars t
+  | Const _ _ => []
+  | App _ tf ta => free_vars tf ++ free_vars ta
   end.
 
 Fixpoint assigned_vars(s: stmt): list var :=

@@ -3,15 +3,6 @@ Require Export proof_outlines.
 
 Definition env := list var.
 
-Inductive type := TInt | TBool.
-
-Definition type_eq_dec(t1 t2: type): {t1 = t2} + {t1 <> t2}.
-decide equality.
-Defined.
-
-Definition type_eqb(t1 t2: type): bool :=
-  if type_eq_dec t1 t2 then true else false.
-
 Section Environment.
 
 Context (E: env).
@@ -38,6 +29,17 @@ Fixpoint type_of(t: term): option type :=
   | Not l t =>
     match type_of t with
       Some TBool => Some TBool
+    | _ => None
+    end
+  | Const _ (cn, ctp) => Some ctp
+  | App _ tf ta =>
+    match type_of tf with
+      Some (TFun tpa tpr) =>
+      match type_of ta with
+        Some tpa' =>
+        if type_eq_dec tpa tpa' then Some tpr else None
+      | None => None
+      end
     | _ => None
     end
   end.

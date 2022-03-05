@@ -31,7 +31,18 @@ Extract Constant loc_eq_dec => "(fun l1 l2 => failwith ""Not implemented"")".
 Parameter locN: Z -> loc. (* Used only in examples in Coq. *)
 Extract Constant locN => "(fun _ -> failwith ""Not implemented"")".
 
+Inductive type := TInt | TBool | TFun(argType resultType: type).
+
+Definition type_eq_dec(t1 t2: type): {t1 = t2} + {t1 <> t2}.
+decide equality.
+Defined.
+
+Definition type_eqb(t1 t2: type): bool :=
+  if type_eq_dec t1 t2 then true else false.
+
 Definition var := string.
+Definition const_name := string.
+Definition const: Set := const_name * type.
 
 Inductive binop := Add | Sub | Eq | Le | And.
 Inductive term :=
@@ -39,14 +50,18 @@ Inductive term :=
 | Var(l: loc)(x: var)
 | BinOp(l: loc)(op: binop)(t1 t2: term)
 | Not(l: loc)(t: term)
+| Const(l: loc)(c: const)
+| App(l: loc)(f arg: term)
 .
 
-Fixpoint loc_of_term(t: term) :=
+Definition loc_of_term(t: term) :=
   match t with
     Val l z => l
   | Var l x => l
   | BinOp l op t1 t2 => l
   | Not l t => l
+  | Const l c => l
+  | App l f a => l
   end.
 
 Inductive law := Law(ps: list term)(c: term).

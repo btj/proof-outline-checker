@@ -7,6 +7,7 @@ type LawAppIndices_ = {__brand: "proof_checker.((loc, nat) prod list)"};
 type JustifList_ = {__brand: "proof_checker.(justif list)"};
 type Stmt_ = {__brand: "proof_checker.stmt"};
 type Result_ = {__brand: "proof_checker.((unit, (loc, string) prod) result)"};
+type Type_ = {__brand: "proof_checker.type"};
 declare var EnvNil: Env_;
 declare function EnvCons(head: string, tail: Env_): Env_;
 declare function Val(loc: Loc, value: number): Term_;
@@ -16,8 +17,13 @@ declare var Sub: BinOp_;
 declare var Eq: BinOp_;
 declare var Le: BinOp_;
 declare var And: BinOp_;
+declare var TInt: Type_;
+declare var TBool: Type_;
+declare function TFun(argumentType: Type_, resultType: Type_): Type_;
 declare function BinOp(loc: Loc, op: BinOp_, t1: Term_, t2: Term_): Term_;
 declare function Not(loc: Loc, t: Term_): Term_;
+declare function Const(loc: Loc, name: string, type: Type_): Term_;
+declare function App(loc: Loc, f: Term_, arg: Term_): Term_;
 declare function JZ(l: Loc): Justif_;
 declare function JZ_at(l: Loc, lk: Loc, k: number): Justif_;
 declare function JRewrite(l: Loc, lk1: Loc, k1: number, lk2: Loc, k2: number): Justif_;
@@ -970,7 +976,8 @@ class SubscriptExpression extends Expression {
 }
 
 class CallExpression extends Expression {
-  arguments: any;
+  arguments: Expression[];
+  method: AbstractMethodDeclaration|undefined;
   constructor(loc: Loc, instrLoc: Loc, public callee: Expression, args: Expression[]) {
     super(loc, instrLoc);
     this.arguments = args;
@@ -980,12 +987,12 @@ class CallExpression extends Expression {
     if (this.callee instanceof VariableExpression) {
       if (!has(toplevelMethods, this.callee.name))
         this.executionError("No such method: " + this.callee.name);
-      let method = toplevelMethods[this.callee.name];
-      if (method.parameterDeclarations.length != this.arguments.length)
+      this.method = toplevelMethods[this.callee.name];
+      if (this.method.parameterDeclarations.length != this.arguments.length)
         this.executionError("Incorrect number of arguments");
       for (let i = 0; i < this.arguments.length; i++)
-        this.arguments[i].checkAgainst(env, method.parameterDeclarations[i].type.type);
-      return method.returnType.type!;
+        this.arguments[i].checkAgainst(env, this.method.parameterDeclarations[i].type.type!);
+      return this.method.returnType.type!;
     } else
       this.executionError("The callee expression must be a method name");
   }
@@ -1484,6 +1491,22 @@ function parseProofOutlineExpression(e: Expression): Term_ {
       default:
         e.executionError("This unary operator is not yet supported in a proof outline");
     }
+  } else if (e instanceof CallExpression) {
+    const parseType = (t: Type) => {
+      if (t == intType)
+        return TInt;
+      else if (t == booleanType)
+        return TBool;
+      return e.callee.executionError("Calls of functions with a parameter or result of type '" + t.toString() + "' are not yet supported in a proof outline");
+    };
+    const constType = e.method!.parameterDeclarations.reduceRight(
+      (acc, p) => TFun(parseType(p.type.type!), acc),
+      parseType(e.method!.returnType.type!)
+    );
+    return e.arguments.reduce(
+      (acc, arg) => App(e.loc, acc, parseProofOutlineExpression(arg)),
+      Const(e.callee.loc, e.method!.name, constType)
+    );
   } else
     e.executionError("This expression form is not yet supported in a proof outline");
 }
@@ -1535,7 +1558,7 @@ class JustificationScanner {
     }
     if (isAlpha(this.c)) {
       this.eat();
-      while (isAlpha(this.c))
+      while (isAlpha(this.c) || isDigit(this.c))
         this.eat();
       this.value = null;
       return this.text.substring(this.tokenStart, this.pos);
@@ -2169,6 +2192,27 @@ class Parser {
     return new BlockStatement(this.popLoc(), stmts);
   }
 
+  parseIfStatementTail(): Statement {
+    this.pushStart();
+    this.next();
+    let instrLoc = this.popLoc();
+    let condition = this.parseExpression();
+    this.expect(':');
+    let thenBody = this.parseSuite();
+    let elseBody = null;
+    switch (this.token) {
+      case 'else':
+        this.next();
+        this.expect(':');
+        elseBody = this.parseSuite();
+        break;
+      case 'elif':
+        elseBody = this.parseIfStatementTail();
+        break;
+    }
+    return new IfStatement(this.popLoc(), instrLoc, condition, thenBody, elseBody);
+} 
+
   parseStatement() {
     this.pushStart();
     switch (this.token) {
@@ -2194,19 +2238,7 @@ class Parser {
         return new ReturnStatement(this.popLoc(), instrLoc, e);
       }
       case 'if': {
-        this.pushStart();
-        this.next();
-        let instrLoc = this.popLoc();
-        let condition = this.parseExpression();
-        this.expect(':');
-        let thenBody = this.parseSuite();
-        let elseBody = null;
-        if (this.token == 'else') {
-          this.next();
-          this.expect(':');
-          elseBody = this.parseSuite();
-        }
-        return new IfStatement(this.popLoc(), instrLoc, condition, thenBody, elseBody);
+        return this.parseIfStatementTail();
       }
       case 'assert': {
         this.pushStart();
@@ -2971,70 +3003,70 @@ assert min(3, 1, 2) == 1
 assert min(3, 2, 1) == 1`,
   expression: `min(30, 20, 10)`
 }, {
-//   title: 'Minimum of three',
-//   declarations:
-// `def min(x, y, z):
-//     if x <= y and x <= z:
-//         return x
-//     elif y <= x and y <= z:
-//         return y
-//     elif z <= x and z <= y:
-//         return z
+  title: 'Minimum of three (using min function)',
+  declarations:
+`def min(x, y, z):
+    if x <= y and x <= z:
+        return x
+    elif y <= x and y <= z:
+        return y
+    elif z <= x and z <= y:
+        return z
 
-// # Wet min3_1: x <= y and x <= z ==> min(x, y, z) == x
-// # Wet min3_2: y <= x and y <= z ==> min(x, y, z) == y
-// # Wet min3_3: z <= x and z <= y ==> min(x, y, z) == z
-// # Wet LeTrans: x <= y and y <= z ==> x <= z
+# Wet min3_1: x <= y and x <= z ==> min(x, y, z) == x
+# Wet min3_2: y <= x and y <= z ==> min(x, y, z) == y
+# Wet min3_3: z <= x and z <= y ==> min(x, y, z) == z
+# Wet LeTrans: x <= y and y <= z ==> x <= z
 
-// def my_min(x, y, z):
+def my_min(x, y, z):
 
-//     assert True # PRECONDITION
+    assert True # PRECONDITION
 
-//     if x <= y:
-//         assert True and x <= y
-//         if x <= z:
-//             assert True and x <= y and x <= z
-//             assert x == min(x, y, z) # min3_1 op 2 en 3
-//             result = x
-//             assert result == min(x, y, z)
-//         else:
-//             assert True and x <= y and not x <= z
-//             assert z <= x and x <= y # Z op 3
-//             assert z <= x and z <= y # LeTrans op 1 en 2
-//             assert z == min(x, y, z) # min3_3 op 1 en 2
-//             result = z
-//             assert result == min(x, y, z)
-//         assert result == min(x, y, z)
-//     else:
-//         assert True and not x <= y
-//         if y <= z:
-//             assert True and not x <= y and y <= z
-//             assert y <= x and y <= z # Z op 2
-//             assert y == min(x, y, z) # min3_2 op 1 en 2
-//             result = y
-//             assert result == min(x, y, z)
-//         else:
-//             assert True and not x <= y and not y <= z
-//             assert y <= x and z <= y # Z op 2 of Z op 3
-//             assert z <= x and z <= y # LeTrans op 2 en 1
-//             assert z == min(x, y, z) # min3_3 op 1 en 2
-//             result = z
-//             assert result == min(x, y, z)
-//         assert result == min(x, y, z)
+    if x <= y:
+        assert True and x <= y
+        if x <= z:
+            assert True and x <= y and x <= z
+            assert x == min(x, y, z) # min3_1 op 2 en 3
+            result = x
+            assert result == min(x, y, z)
+        else:
+            assert True and x <= y and not x <= z
+            assert z <= x and x <= y # Z op 3
+            assert z <= x and z <= y # LeTrans op 1 en 2
+            assert z == min(x, y, z) # min3_3 op 1 en 2
+            result = z
+            assert result == min(x, y, z)
+        assert result == min(x, y, z)
+    else:
+        assert True and not x <= y
+        if y <= z:
+            assert True and not x <= y and y <= z
+            assert y <= x and y <= z # Z op 2
+            assert y == min(x, y, z) # min3_2 op 1 en 2
+            result = y
+            assert result == min(x, y, z)
+        else:
+            assert True and not x <= y and not y <= z
+            assert y <= x and z <= y # Z op 2 of Z op 3
+            assert z <= x and z <= y # LeTrans op 2 en 1
+            assert z == min(x, y, z) # min3_3 op 1 en 2
+            result = z
+            assert result == min(x, y, z)
+        assert result == min(x, y, z)
 
-//     assert result == min(x, y, z) # POSTCONDITION
+    assert result == min(x, y, z) # POSTCONDITION
 
-//     return result
-// `,
-//   statements:
-// `assert my_min(1, 2, 3) == 1
-// assert my_min(1, 3, 2) == 1
-// assert my_min(2, 1, 3) == 1
-// assert my_min(2, 3, 1) == 1
-// assert my_min(3, 1, 2) == 1
-// assert my_min(3, 2, 1) == 1`,
-//   expression: `my_min(30, 20, 10)`
-// }, {
+    return result
+`,
+  statements:
+`assert my_min(1, 2, 3) == 1
+assert my_min(1, 3, 2) == 1
+assert my_min(2, 1, 3) == 1
+assert my_min(2, 3, 1) == 1
+assert my_min(3, 1, 2) == 1
+assert my_min(3, 2, 1) == 1`,
+  expression: `my_min(30, 20, 10)`
+}, {
   title: 'Aantal sterren',
   declarations:
 `#def aantal_sterren(n):
