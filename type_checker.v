@@ -64,7 +64,7 @@ Fixpoint post_env_of_stmt(E: env)(s: stmt): option env :=
         Some E1 =>
         match post_env_of_stmt E s2 with
           Some E2 =>
-          Some E
+          Some (filter (fun x => existsb (String.eqb x) E2) E1)
         | _ => None
         end
       | _ => None

@@ -165,13 +165,12 @@ Definition is_Z_entailment(H C: term): bool :=
     end
   | BinOp lC Le t1 t2 =>
     let pC := poly_subtract (poly_of t2) (poly_of t1) in
-    let Cconst :=
+    let (pC', Cconst) :=
       match poly_lookup (Val lC 1) pC with
-        None => 0%Z
-      | Some z => z
+        None => (pC, 0%Z)
+      | Some z => (poly_add_term (-z) (Val lC 1) pC, 0%Z)
       end
     in
-    let pC' := poly_add_term (-Cconst) (Val lC 1) pC in
     match pC' with
       [] => Z.leb 0 Cconst
     | (zC0, tC0)::pC0 =>
@@ -183,7 +182,7 @@ Definition is_Z_entailment(H C: term): bool :=
         | Some zH0 =>
           match poly_subtract (poly_scale zH0 pC) (poly_scale zC0 pH) with
             [] => true
-          | [(z, Val _ 1)] => Z.leb 0 z
+          | [(z, Val _ 1)] => Z.leb 0 (Z.mul z zH0)
           | _ => false
           end
         end
@@ -194,7 +193,7 @@ Definition is_Z_entailment(H C: term): bool :=
         | Some zH0 =>
           match poly_subtract (poly_scale zH0 pC) (poly_scale zC0 pH) with
             [] => true
-          | [(z, Val _ 1)] => Z.leb 0 z
+          | [(z, Val _ 1)] => Z.leb 0 (Z.mul z zH0)
           | _ => false
           end
         end
@@ -203,6 +202,13 @@ Definition is_Z_entailment(H C: term): bool :=
     end
   | _ => false
   end.
+
+Goal is_Z_entailment
+  (BinOp (locN 0) Le (BinOp (locN 2) Add (Var (locN 1) "z") (Val (locN 3) 1)) (Var (locN 4) "x"))
+  (BinOp (locN 5) Le (Var (locN 6) "z") (Var (locN 7) "x")) = true.
+Proof.
+  reflexivity.
+Qed.
 
 Goal is_Z_entailment
   (BinOp (locN 0) Eq (Var (locN 1) "r") (BinOp (locN 2) Sub (Var (locN 3) "n") (Var (locN 4) "i")))
@@ -381,6 +387,22 @@ Fixpoint check_proof_outline(total: bool)(s: stmt): result unit (loc * string) :
       check_proof_outline total s
     else
       Error (laP, "Assignment precondition does not match postcondition with RHS substituted for LHS")
+  | Assert laP P _ ;; If li C ((Assert laPthen Pthen _ ;; _) as thenBody) ((Assert laPelse Pelse _ ;; _) as elseBody) ;; (Assert laQ Q _ ;; _) as s =>
+    if negb (term_equivb' Pthen (BinOp li And P C)) then
+      Error (laPthen, "The precondition of the 'then' block of an 'if' statement must match the conjunction of the 'if' statement's precondition and the condition")
+    else if negb (ends_with_assert thenBody Q) then
+      Error (li, "The 'then' block of an 'if' statement must end with an assertion that asserts the 'if' statement's postcondition")
+    else
+      match check_proof_outline total thenBody with
+        Error e => Error e
+      | Ok _ =>
+        if negb (term_equivb' Pelse (BinOp li And P (Not li C))) then
+          Error (laPelse, "The precondition of the 'else' block of an 'if' statement must match the conjunction of the 'if' statement's precondition and the negation of the condition")
+        else if negb (ends_with_assert elseBody Q) then
+          Error (li, "The 'else' block of an 'if' statement must end with an assertion that asserts the 'if' statement's postcondition")
+        else
+          check_proof_outline total elseBody
+      end
   | Assert laInv Inv _ ;; While lw C body ;; ((Assert laQ Q _ ;; _) as s) =>
     if total then
       match body with

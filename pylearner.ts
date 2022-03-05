@@ -31,6 +31,7 @@ declare function Pass(l: Loc): Stmt_;
 declare function Seq(s1: Stmt_, s2: Stmt_): Stmt_;
 declare function Assert(l: Loc, t: Term_, js: JustifList_): Stmt_;
 declare function Assign(l: Loc, x: string, t: Term_): Stmt_;
+declare function If(l: Loc, condition: Term_, thenBody: Stmt_, elseBody: Stmt_): Stmt_;
 declare function While(l: Loc, t: Term_, body: Stmt_): Stmt_;
 declare function stmt_is_well_typed(env: Env_, stmt: Stmt_): boolean;
 declare function check_proof_outline(total: boolean, outline: Stmt_): Result_;
@@ -231,7 +232,7 @@ abstract class Binding {
 
 class LocalBinding extends Binding {
 
-  constructor(public declaration: any, public value: any) {
+  constructor(public declaration: any, value: any) {
     super(value);
   }
   
@@ -1187,8 +1188,6 @@ class VariableDeclarationStatement extends Statement {
   }
   
   async execute(env: Scope) {
-    if (env.tryLookup(this.name) != null)
-      throw new ExecutionError(this.nameLoc, "Variable '"+this.name+"' already exists in this scope.");
     await this.init.evaluate(env);
     await this.breakpoint();
     let [v] = pop(1);
@@ -1241,26 +1240,24 @@ class ReturnStatement extends Statement {
 }
 
 class BlockStatement extends Statement {
+  scope: Scope|undefined;
   constructor(loc: Loc, public stmts: Statement[]) {
     super(loc, loc);
   }
 
   check(env: Scope) {
-    let scope = new Scope(env);
+    this.scope = new Scope(env);
     for (let stmt of this.stmts)
-      stmt.check(scope);
+      stmt.check(this.scope);
   }
 
   async execute(env: Scope) {
-    let scope = new Scope(env);
-    callStack[callStack.length - 1].env = scope;
     let result;
     for (let stmt of this.stmts) {
-      result = await stmt.execute(scope);
+      result = await stmt.execute(env);
       if (result !== undefined)
         break;
     }
-    callStack[callStack.length - 1].env = env;
     return result;
   }
 }
@@ -1304,6 +1301,16 @@ class IfStatement extends Statement {
     this.thenBody.check(env);
     if (this.elseBody != null)
       this.elseBody.check(env);
+    if (this.thenBody instanceof BlockStatement && this.elseBody instanceof BlockStatement) {
+      for (const x in this.thenBody.scope!.bindings) {
+        if (env.tryLookup(x) == null && has(this.elseBody.scope!.bindings, x)) {
+          const thenBinding = this.thenBody.scope!.bindings[x] as LocalBinding;
+          const elseBinding = this.elseBody.scope!.bindings[x] as LocalBinding;
+          if (thenBinding.value.equals(elseBinding.value))
+            env.bindings[x] = new LocalBinding(thenBinding.declaration, thenBinding.value);
+        }
+      }
+    }
   }
 
   async execute(env: Scope) {
@@ -1641,6 +1648,12 @@ function parseProofOutline(stmts: Statement[], i: number, precededByAssert: bool
     return Seq(Assert(stmt.loc, body, justif), parseProofOutline(stmts, i + 1, true));
   } else if (stmt instanceof ExpressionStatement && stmt.expr instanceof AssignmentExpression && stmt.expr.op == '=' && stmt.expr.lhs instanceof VariableExpression) {
     return Seq(Assign(stmt.loc, stmt.expr.lhs.name, parseProofOutlineExpression(stmt.expr.rhs)), parseProofOutline(stmts, i + 1, false));
+  } else if (stmt instanceof IfStatement) {
+    if (stmt.elseBody == null)
+      return stmt.executionError("'if' statements in proof outlines must have an 'else' branch. Insert 'else: pass'");
+    if (!(stmt.thenBody instanceof BlockStatement) || !(stmt.elseBody instanceof BlockStatement))
+      return stmt.executionError("In a proof outline, the branches of an 'if' statement must be blocks.");
+    return Seq(If(stmt.loc, parseProofOutlineExpression(stmt.condition), parseProofOutline(stmt.thenBody.stmts, 0, false), parseProofOutline(stmt.elseBody.stmts, 0, false)), parseProofOutline(stmts, i + 1, false));
   } else if (stmt instanceof WhileStatement) {
     const cond = parseProofOutlineExpression(stmt.condition);
     if (!(stmt.body instanceof BlockStatement))
@@ -2907,6 +2920,158 @@ def copy(n):
 `assert copy(2) == 2
 assert copy(7) == 7`,
   expression: `copy(3)`
+}, {
+  title: 'Minimum of three',
+  declarations:
+`# Wet LeTrans: x <= y <= z ==> x <= z
+
+def min(x, y, z):
+
+    assert True # PRECONDITION
+
+    if x <= y:
+        assert True and x <= y
+        if x <= z:
+            assert True and x <= y and x <= z
+            assert x <= x and x <= y and x <= z # Z
+            result = x
+            assert result <= x and result <= y and result <= z
+        else:
+            assert True and x <= y and not x <= z
+            assert z <= x and x <= y # Z op 3
+            assert z <= x and z <= y and z <= z # LeTrans op 1 en 2 of Z
+            result = z
+            assert result <= x and result <= y and result <= z
+        assert result <= x and result <= y and result <= z
+    else:
+        assert True and not x <= y
+        if y <= z:
+            assert True and not x <= y and y <= z
+            assert y <= x and y <= y and y <= z # Z op 2 of Z
+            result = y
+            assert result <= x and result <= y and result <= z
+        else:
+            assert True and not x <= y and not y <= z
+            assert y <= x and z <= y # Z op 2 of Z op 3
+            assert z <= x and z <= y and z <= z # LeTrans op 2 en 1 of Z
+            result = z
+            assert result <= x and result <= y and result <= z
+        assert result <= x and result <= y and result <= z
+
+    assert result <= x and result <= y and result <= z # POSTCONDITION
+
+    return result
+`,
+  statements:
+`assert min(1, 2, 3) == 1
+assert min(1, 3, 2) == 1
+assert min(2, 1, 3) == 1
+assert min(2, 3, 1) == 1
+assert min(3, 1, 2) == 1
+assert min(3, 2, 1) == 1`,
+  expression: `min(30, 20, 10)`
+}, {
+//   title: 'Minimum of three',
+//   declarations:
+// `def min(x, y, z):
+//     if x <= y and x <= z:
+//         return x
+//     elif y <= x and y <= z:
+//         return y
+//     elif z <= x and z <= y:
+//         return z
+
+// # Wet min3_1: x <= y and x <= z ==> min(x, y, z) == x
+// # Wet min3_2: y <= x and y <= z ==> min(x, y, z) == y
+// # Wet min3_3: z <= x and z <= y ==> min(x, y, z) == z
+// # Wet LeTrans: x <= y and y <= z ==> x <= z
+
+// def my_min(x, y, z):
+
+//     assert True # PRECONDITION
+
+//     if x <= y:
+//         assert True and x <= y
+//         if x <= z:
+//             assert True and x <= y and x <= z
+//             assert x == min(x, y, z) # min3_1 op 2 en 3
+//             result = x
+//             assert result == min(x, y, z)
+//         else:
+//             assert True and x <= y and not x <= z
+//             assert z <= x and x <= y # Z op 3
+//             assert z <= x and z <= y # LeTrans op 1 en 2
+//             assert z == min(x, y, z) # min3_3 op 1 en 2
+//             result = z
+//             assert result == min(x, y, z)
+//         assert result == min(x, y, z)
+//     else:
+//         assert True and not x <= y
+//         if y <= z:
+//             assert True and not x <= y and y <= z
+//             assert y <= x and y <= z # Z op 2
+//             assert y == min(x, y, z) # min3_2 op 1 en 2
+//             result = y
+//             assert result == min(x, y, z)
+//         else:
+//             assert True and not x <= y and not y <= z
+//             assert y <= x and z <= y # Z op 2 of Z op 3
+//             assert z <= x and z <= y # LeTrans op 2 en 1
+//             assert z == min(x, y, z) # min3_3 op 1 en 2
+//             result = z
+//             assert result == min(x, y, z)
+//         assert result == min(x, y, z)
+
+//     assert result == min(x, y, z) # POSTCONDITION
+
+//     return result
+// `,
+//   statements:
+// `assert my_min(1, 2, 3) == 1
+// assert my_min(1, 3, 2) == 1
+// assert my_min(2, 1, 3) == 1
+// assert my_min(2, 3, 1) == 1
+// assert my_min(3, 1, 2) == 1
+// assert my_min(3, 2, 1) == 1`,
+//   expression: `my_min(30, 20, 10)`
+// }, {
+  title: 'Aantal sterren',
+  declarations:
+`#def aantal_sterren(n):
+
+    # Examen MI 4/6/21
+
+    #assert 0 <= n # PRECONDITION PARTIAL CORRECTNESS
+
+    #assert 0 <= n <= n and "" == 0 * "*" and n - n == 0 # Z of NulSterren
+    #assert 0 <= n <= n and "" == (n - n) * "*" # Herschrijven met 3 in 2
+    #i = n
+    #assert 0 <= i <= n and "" == (n - i) * "*"
+    #res = ""
+    #assert 0 <= i <= n and res == (n - i) * "*"
+    #while 0 < i:
+        #assert 0 <= i <= n and res == (n - i) * "*" and 0 < i
+        #assert 0 <= i <= n and res == (n - i) * "*" and 0 < i and res + "*" == res + "*" # EqRefl
+        #assert 0 <= i - 1 <= n and res + "*" == (n - i) * "*" + "*" and 0 <= n - i # Z op 4 of Z of 2 of Herschrijven met 3 in 5
+        #assert 0 <= i - 1 <= n and res + "*" == (n - i + 1) * "*" and n - i + 1 == n - (i - 1) # Herschrijven met PlusEenSterren op 4 in 3 of Z
+        #assert 0 <= i - 1 <= n and res + "*" == (n - (i - 1)) * "*" # Herschrijven met 4 in 3
+        #res = res + "*"
+        #assert 0 <= i - 1 <= n and res == (n - (i - 1)) * "*"
+        #i = i - 1
+        #assert 0 <= i <= n and res == (n - i) * "*"
+    #assert 0 <= i <= n and res == (n - i) * "*" and not 0 < i
+    #assert 0 <= i <= n and res == (n - i) * "*" and i <= 0 # Z op 4
+    #assert 0 == i and res == (n - i) * "*" # LeAntisym op 1 en 4
+    #assert res == (n - 0) * "*" and n - 0 == n # Herschrijven met 1 in 2 of Z
+
+    #assert res == n * "*" # Herschrijven met 2 in 1 # POSTCONDITION
+
+    #return res
+`,
+  statements:
+`#assert aantal_sterren(2) == "**"
+#assert aantal_sterren(3) == "***"`,
+  expression: ``
 }, {
   title: 'Faculty',
   declarations:
