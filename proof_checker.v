@@ -345,44 +345,92 @@ Fixpoint subst(x: var)(t: term)(t0: term): term :=
 
 Fixpoint ends_with_assert(s: stmt)(P: term): bool :=
   match s with
-    Assert la P' _ ;; Pass lp => term_equivb P' P
+    Assert la P' _ ;; Pass lp => term_equivb' P' P
   | _ ;; s' => ends_with_assert s' P
   | _ => false
   end.
 
-Fixpoint check_proof_outline(s: stmt): result unit (loc * string) :=
+Fixpoint free_vars(t: term): list var :=
+  match t with
+    Var _ x => [x]
+  | Val _ v => []
+  | BinOp _ _ t1 t2 => free_vars t1 ++ free_vars t2
+  | Not _ t => free_vars t
+  end.
+
+Fixpoint assigned_vars(s: stmt): list var :=
+  match s with
+    Assert _ _ _ => []
+  | Assign _ x t => [x]
+  | If _ C s1 s2 => assigned_vars s1 ++ assigned_vars s2
+  | While _ C body => assigned_vars body
+  | s1 ;; s2 => assigned_vars s1 ++ assigned_vars s2
+  | Pass _ => []
+  end.
+
+Fixpoint check_proof_outline(total: bool)(s: stmt): result unit (loc * string) :=
   match s with
     Assert laP P _ ;; (Assert laP' P' js ;; _) as s =>
     match check_entailment P P' js with
       Ok _ =>
-      check_proof_outline s
+      check_proof_outline total s
     | Error e => Error e
     end
   | Assert laP P _ ;; Assign lass x t ;; (Assert laQ Q _ ;; _) as s =>
     if term_equivb P (subst x t Q) then
-      check_proof_outline s
+      check_proof_outline total s
     else
       Error (laP, "Assignment precondition does not match postcondition with RHS substituted for LHS")
-  | Assert laInv Inv _ ;; (While lw C ((Assert laP P _ ;; _) as body)) ;; ((Assert laQ Q _ ;; _) as s) =>
-    if term_equivb' P (BinOp laInv And Inv C) then
-      if ends_with_assert body Inv then
-        match check_proof_outline body with
-          Ok _ =>
-          if term_equivb' Q (BinOp laInv And Inv (Not laInv C)) then
-            check_proof_outline s
-          else
-            Error (laQ, "Loop postcondition does not match conjunction of invariant and negation of condition")
-        | Error e => Error e
-        end
-      else
-        Error (lw, "Body of loop does not end with an assert statement that asserts the loop invariant")
+  | Assert laInv Inv _ ;; While lw C body ;; ((Assert laQ Q _ ;; _) as s) =>
+    if total then
+      match body with
+        Assign las x V ;; ((Assert laP P _ ;; body1) as body0) =>
+        if existsb (String.eqb x) (free_vars Inv) then
+          Error (laInv, "Variable '" ++ x ++ "' must not appear in the loop invariant")
+        else if existsb (String.eqb x) (free_vars C) then
+          Error (lw, "Variable '" ++ x ++ "' must not appear in the loop condition")
+        else if existsb (String.eqb x) (assigned_vars body1) then
+          Error (loc_of_stmt body1, "Variable '" ++ x ++ "' must not be assigned to in the loop body")
+        else if negb (term_equivb' P (BinOp lw And Inv (BinOp lw And C (BinOp lw Eq V (Var lw x))))) then
+          Error (laP, "Loop body precondition does not match conjunction of invariant, condition, and equality of variant and variable")
+        else if negb (ends_with_assert body1 (BinOp lw And Inv (BinOp lw And (BinOp lw Le (Val lw 0) V) (BinOp lw Le (BinOp lw Add V (Val lw 1)) (Var lw x))))) then
+          Error (loc_of_stmt body1, "Loop body does not end with an assert statement that asserts the conjunction of the loop invariant and that the variant is nonnegative and less than the variable")
+        else
+          match check_proof_outline total body0 with
+            Error e => Error e
+          | Ok _ =>
+            if negb (term_equivb' Q (BinOp lw And Inv (Not lw C))) then
+              Error (laQ, "Loop postcondition does not match conjunction of invariant and negation of condition")
+            else
+              Ok tt
+          end
+      | _ => Error (lw, "Body of loop must start with assignment followed by assertion")
+      end
     else
-      Error (laP, "Loop body precondition does not match conjunction of invariant and condition")
+      match body with
+        Assert laP P _ ;; _ =>
+        if term_equivb' P (BinOp laInv And Inv C) then
+          if ends_with_assert body Inv then
+            match check_proof_outline total body with
+              Ok _ =>
+              if term_equivb' Q (BinOp laInv And Inv (Not laInv C)) then
+                check_proof_outline total s
+              else
+                Error (laQ, "Loop postcondition does not match conjunction of invariant and negation of condition")
+            | Error e => Error e
+            end
+          else
+            Error (lw, "Body of loop does not end with an assert statement that asserts the loop invariant")
+        else
+          Error (laP, "Loop body precondition does not match conjunction of invariant and condition")
+      | _ =>
+        Error (loc_of_stmt body, "Body of loop must start with assert")
+      end
   | Assert laP P _ ;; Pass lp => Ok tt
   | _ => Error (loc_of_stmt s, "Malformed proof outline")
   end.
 
-Goal check_proof_outline (
+Goal check_proof_outline false (
   Assert (locN 0) (BinOp (locN 1) Eq (Var (locN 2) "x") (Val (locN 3) 1)) [];;
   Assert (locN 4) (BinOp (locN 5) Eq (Var (locN 6) "x") (Val (locN 7) 1)) [JZ (locN 8)];;
   Pass (locN 9)
@@ -391,7 +439,7 @@ Proof.
   reflexivity.
 Qed.
 
-Goal check_proof_outline (
+Goal check_proof_outline false (
   Assert (locN 0) (BinOp (locN 1) And (BinOp (locN 2) Eq (Var (locN 3) "x") (Val (locN 4) 1)) (BinOp (locN 5) Eq (Var (locN 6) "y") (Val (locN 7) 1))) [];;
   Assert (locN 8) (BinOp (locN 9) And (BinOp (locN 10) Eq (Var (locN 11) "y") (Val (locN 12) 1)) (BinOp (locN 13) Eq (Var (locN 14) "x") (Val (locN 15) 1))) [JZ (locN 16)];;
   Pass (locN 17)
@@ -400,7 +448,7 @@ Proof.
   reflexivity.
 Qed.
 
-Goal check_proof_outline (
+Goal check_proof_outline false (
     Assert (locN 0) (BinOp (locN 1) And (BinOp (locN 2) Eq (Var (locN 14) "r") (BinOp (locN 3) Sub (Var (locN 4) "n") (Var (locN 5) "i"))) (Not (locN 6) (BinOp (locN 7) Eq (Var (locN 8) "i") (Val (locN 9) 0)))) [];;
     Assert (locN 10) (BinOp (locN 11) Eq (BinOp (locN 12) Add (Var (locN 13) "r") (Val (locN 15) 1)) (BinOp (locN 16) Sub (Var (locN 17) "n") (BinOp (locN 18) Sub (Var (locN 19) "i") (Val (locN 20) 1)))) [JZ_at (locN 21) (locN 22) 0];;
     Assign (locN 23) "i" (BinOp (locN 24) Sub (Var (locN 25) "i") (Val (locN 26) 1));;
@@ -428,7 +476,7 @@ Proof.
 Qed.
 *)
 
-Goal check_proof_outline outline1 = Ok tt.
+Goal check_proof_outline false outline1 = Ok tt.
 Proof.
   reflexivity.
 Qed.

@@ -1,4 +1,4 @@
-all: proof_checker.js pylearner.js
+all: test
 
 COQ_OPTS=-R . proofchecker
 
@@ -28,3 +28,6 @@ node_modules:
 
 pylearner.js: node_modules pylearner.ts
 	-npx tsc
+
+test: proof_checker.js pylearner.js
+	node test.js

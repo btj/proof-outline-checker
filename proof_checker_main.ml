@@ -90,7 +90,7 @@ let _ =
       method _Seq (s1: stmt) (s2: stmt): stmt = Seq (s1, s2)
       method _Pass (l: loc): stmt = Pass l
       method stmt_is_well_typed_ (e: env) (s: stmt): _bool Js.t = Js.bool (Proof_checker.post_env_of_stmt e s <> None)
-      method check_proof_outline_ (s: stmt): (unit0, (loc, string) prod) result = Proof_checker.check_proof_outline s
+      method check_proof_outline_ (total: _bool Js.t) (s: stmt): (unit0, (loc, string) prod) result = Proof_checker.check_proof_outline (if Js.to_bool total then True else False) s
       method isOk (r: (unit0, (loc, string) prod) result): _bool Js.t = Js.bool (match r with Ok _ -> true | _ -> false)
       method getLoc (r: (unit0, (loc, string) prod) result): loc = let Error (Pair (l, msg)) = r in l
       method getMsg (r: (unit0, (loc, string) prod) result): Js.js_string Js.t = let Error (Pair (l, msg)) = r in Js.string (string_of_coq_string msg)

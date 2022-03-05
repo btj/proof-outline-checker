@@ -33,7 +33,7 @@ declare function Assert(l: Loc, t: Term_, js: JustifList_): Stmt_;
 declare function Assign(l: Loc, x: string, t: Term_): Stmt_;
 declare function While(l: Loc, t: Term_, body: Stmt_): Stmt_;
 declare function stmt_is_well_typed(env: Env_, stmt: Stmt_): boolean;
-declare function check_proof_outline(outline: Stmt_): Result_;
+declare function check_proof_outline(total: boolean, outline: Stmt_): Result_;
 declare function isOk(result: Result_): boolean;
 declare function getLoc(result: Result_): Loc;
 declare function getMsg(result: Result_): string;
@@ -1415,6 +1415,7 @@ class MethodDeclaration extends AbstractMethodDeclaration {
     let env = this.parameterDeclarations.reduceRight((acc, d) => EnvCons(d.name, acc), EnvNil);
     let outlineStart = null;
     let outlineStartEnv = null;
+    let total = null;
 
     for (let i = 0; i < this.bodyBlock.length; i++) {
       const stmt = this.bodyBlock[i];
@@ -1426,11 +1427,12 @@ class MethodDeclaration extends AbstractMethodDeclaration {
             stmt.executionError("Unexpected PRECONDITION tag inside proof outline");
           outlineStart = i;
           outlineStartEnv = env;
+          total = !stmt.comment.text.includes('PARTIAL CORRECTNESS');
         }
         if (stmt.comment.text.includes('POSTCONDITION')) {
           if (outlineStart == null)
             return stmt.executionError("POSTCONDITION without PRECONDITION");
-          checkProofOutline(outlineStartEnv!, this.bodyBlock.slice(outlineStart, i + 1));
+          checkProofOutline(total!, outlineStartEnv!, this.bodyBlock.slice(outlineStart, i + 1));
           outlineStart = null;
           outlineStartEnv = null;
         }
@@ -1649,11 +1651,11 @@ function parseProofOutline(stmts: Statement[], i: number, precededByAssert: bool
     return stmt.executionError("This statement form is not yet supported in a proof outline.");
 }
 
-function checkProofOutline(env: Env_, stmts: Statement[]) {
+function checkProofOutline(total: boolean, env: Env_, stmts: Statement[]) {
   const outline = parseProofOutline(stmts, 0, false);
   if (!stmt_is_well_typed(env, outline))
     throw new LocError(new Loc(stmts[0].loc.doc, stmts[0].loc.start, stmts[stmts.length - 1].loc.end), "Proof outline is not well-typed");
-  const result = check_proof_outline(outline);
+  const result = check_proof_outline(total, outline);
   if (!isOk(result))
     throw new LocError(getLoc(result), getMsg(result));
   nbProofOutlinesChecked++;
@@ -2814,7 +2816,7 @@ const examples: Example[] = [{
   declarations:
 `def copy(n):
 
-    assert True # PRECONDITION PARTIAL_CORRECTNESS
+    assert True # PRECONDITION PARTIAL CORRECTNESS
     assert 0 == n - n # Z
     i = n
     assert 0 == n - i
@@ -2845,7 +2847,7 @@ assert copy(7) == 7`,
 
 def copy(n):
 
-    assert 0 <= n # PRECONDITION PARTIAL_CORRECTNESS
+    assert 0 <= n # PRECONDITION PARTIAL CORRECTNESS
     assert 0 <= n and 0 == n - n # Z
     i = n
     assert 0 <= i and 0 == n - i
@@ -2877,7 +2879,7 @@ assert copy(7) == 7`,
 
 def copy(n):
 
-    assert 0 <= n # PRE CONDITION TOTAL_CORRECTNESS
+    assert 0 <= n # PRECONDITION
     assert 0 <= n and 0 == n - n # Z
     i = n
     assert 0 <= i and 0 == n - i
@@ -2887,17 +2889,17 @@ def copy(n):
         oude_variant = i
         assert 0 <= i and r == n - i and 0 < i and i == oude_variant
         assert 0 < i and r + 1 == n - (i - 1) and i == oude_variant # Z op 2
-        #assert r + 1 == n - (i - 1) and 0 <= i - 1 < oude_variant # Z op 1 of Z op 2
+        assert r + 1 == n - (i - 1) and 0 <= i - 1 < oude_variant # Z op 1 of Z op 3
         i = i - 1
-        #assert r + 1 == n - i and 0 <= i < oude_variant
+        assert r + 1 == n - i and 0 <= i < oude_variant
         r = r + 1
-        #assert r == n - i and 0 <= i < oude_variant
-        #assert 0 <= i and r == n - i and 0 <= i < oude_variant
+        assert r == n - i and 0 <= i < oude_variant
+        assert 0 <= i and r == n - i and 0 <= i < oude_variant
     assert 0 <= i and r == n - i and not 0 < i
     assert 0 <= i and r == n - i and i <= 0 # Z op 3
     assert r == n - i and 0 == i # LeAntisym op 1 en 3
     assert r == n - 0 # Herschrijven met 2 in 1
-    assert r == n # Z op 1 # POST CONDITION
+    assert r == n # Z op 1 # POSTCONDITION
 
     return r
 `,
