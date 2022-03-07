@@ -3,31 +3,39 @@ type Term_ = {__brand: "proof_checker.term"};
 type BinOp_ = {__brand: "proof_checker.binop"};
 type Justif_ = {__brand: "proof_checker.justif"};
 type Law_ = {__brand: "proof_checker.law"};
+type TermList_ = {__brand: "proof_checker.(term list)"};
 type LawAppIndices_ = {__brand: "proof_checker.((loc, nat) prod list)"};
 type JustifList_ = {__brand: "proof_checker.(justif list)"};
 type Stmt_ = {__brand: "proof_checker.stmt"};
 type Result_ = {__brand: "proof_checker.((unit, (loc, string) prod) result)"};
 type Type_ = {__brand: "proof_checker.type"};
+type Var_ = {__brand: "proof_checker.((string * type0) prod)"};
+type Const_ = {__brand: "proof_checker.((string * type0) prod)"};
+declare function mkVar(name: string, type: Type_): Var_;
+declare function mkConst(name: string, type: Type_): Const_;
 declare var EnvNil: Env_;
-declare function EnvCons(head: string, tail: Env_): Env_;
+declare function EnvCons(x: Var_, tail: Env_): Env_;
 declare function Val(loc: Loc, value: number): Term_;
-declare function Var(loc: Loc, name: string): Term_;
+declare function Var(loc: Loc, x: Var_): Term_;
 declare var Add: BinOp_;
 declare var Sub: BinOp_;
-declare var Eq: BinOp_;
+declare function Eq(type: Type_): BinOp_;
 declare var Le: BinOp_;
 declare var And: BinOp_;
 declare var TInt: Type_;
 declare var TBool: Type_;
+declare function TSort(sort: string): Type_;
 declare function TFun(argumentType: Type_, resultType: Type_): Type_;
 declare function BinOp(loc: Loc, op: BinOp_, t1: Term_, t2: Term_): Term_;
 declare function Not(loc: Loc, t: Term_): Term_;
-declare function Const(loc: Loc, name: string, type: Type_): Term_;
+declare function Const(loc: Loc, c: Const_): Term_;
 declare function App(loc: Loc, f: Term_, arg: Term_): Term_;
 declare function JZ(l: Loc): Justif_;
 declare function JZ_at(l: Loc, lk: Loc, k: number): Justif_;
 declare function JRewrite(l: Loc, lk1: Loc, k1: number, lk2: Loc, k2: number): Justif_;
-declare function Law(p: Term_, c: Term_): Law_;
+declare var TermsNil: TermList_;
+declare function TermsCons(t: Term_, ts: TermList_): TermList_;
+declare function Law(p: TermList_, c: Term_): Law_;
 declare var LawAppIndicesNil: LawAppIndices_;
 declare function LawAppIndicesCons(lk: Loc, k: number, ks: LawAppIndices_): LawAppIndices_;
 declare function JLaw(l: Loc, law: Law_, ks: LawAppIndices_): Justif_;
@@ -36,7 +44,7 @@ declare function JustifCons(j: Justif_, js: JustifList_): JustifList_;
 declare function Pass(l: Loc): Stmt_;
 declare function Seq(s1: Stmt_, s2: Stmt_): Stmt_;
 declare function Assert(l: Loc, t: Term_, js: JustifList_): Stmt_;
-declare function Assign(l: Loc, x: string, t: Term_): Stmt_;
+declare function Assign(l: Loc, x: Var_, t: Term_): Stmt_;
 declare function If(l: Loc, condition: Term_, thenBody: Stmt_, elseBody: Stmt_): Stmt_;
 declare function While(l: Loc, t: Term_, body: Stmt_): Stmt_;
 declare function stmt_is_well_typed(env: Env_, stmt: Stmt_): boolean;
@@ -460,6 +468,11 @@ class BinaryOperatorExpression extends Expression {
   check(env: Scope) {
     switch (this.operator) {
       case '+':
+        const lhsType = this.leftOperand.check_(env);
+        if (!lhsType.isAddable())
+          this.executionError("The left-hand operand does not support addition");
+        this.rightOperand.checkAgainst(env, lhsType);
+        return lhsType;
       case '-':
       case '*':
       case '/':
@@ -497,7 +510,12 @@ class BinaryOperatorExpression extends Expression {
 
   eval(v1: Value, v2: Value) {
     switch (this.operator) {
-      case '+': return (v1 + v2)|0;
+      case '+':
+        if (v1 instanceof ListObject && v2 instanceof ListObject)
+          return v1.plus(v2);
+        if (typeof v1 == 'number' && typeof v2 == 'number')
+          return (v1 + v2)|0;
+        this.executionError("Bad operands");
       case '-': return (v1 - v2)|0;
       case '*': return (v1 * v2)|0;
       case '/': return (v1 / v2)|0;
@@ -508,7 +526,8 @@ class BinaryOperatorExpression extends Expression {
       case '>>': return v1 >> v2;
       case '>>>': return v1 >>> v2;
       case '<<': return v1 << v2;
-      case '==': return v1 == v2;
+      case '==':
+        return valueEquals(v1, v2);
       case '!=': return v1 != v2;
       case '<': return v1 < v2;
       case '<=': return v1 <= v2;
@@ -537,13 +556,16 @@ class BinaryOperatorExpression extends Expression {
 }
 
 class VariableExpression extends Expression {
+  binding: LocalBinding|undefined;
+  proofOutlineVariable: Var_|undefined;
 
   constructor(loc: Loc, public name: string) {
     super(loc, loc);
   }
 
   check(env: Scope) {
-    return env.lookup(this.loc, this.name).declaration.type.type;
+    this.binding = env.lookup(this.loc, this.name) as LocalBinding;
+    return this.binding.declaration.type.type;
   }
   
   async evaluateBinding(env: Scope, allowReadOnly?: boolean) {
@@ -553,6 +575,12 @@ class VariableExpression extends Expression {
   async evaluate(env: Scope) {
     await this.breakpoint();
     this.push(env.lookup(this.loc, this.name).value);
+  }
+
+  getProofOutlineVariable(onError: () => never): Var_ {
+    if (!this.proofOutlineVariable)
+      this.proofOutlineVariable = mkVar(this.name, parseProofOutlineType(this.binding!.declaration.type.type, onError));
+    return this.proofOutlineVariable;
   }
 }
 
@@ -570,6 +598,7 @@ class AssignmentExpression extends Expression {
       if (this.lhs instanceof VariableExpression && env.tryLookup(this.lhs.name) == null) {
         this.declaration = new VariableDeclarationStatement(this.loc, this.instrLoc!, new ImplicitTypeExpression(), this.lhs.loc, this.lhs.name, this.rhs);
         this.declaration.check(env);
+        this.lhs.binding = env.bindings[this.lhs.name];
         return voidType;
       }
       let t = this.lhs.check_(env);
@@ -770,7 +799,8 @@ class JavaObject {
   domNode: any;
 
   constructor(public type: ReferenceType, public fields: {[index: string]: FieldBinding}) {
-    this.domNode = createHeapObjectDOMNode(this);
+    if (typeof document !== 'undefined')
+      this.domNode = createHeapObjectDOMNode(this);
   }
 
   toString() {
@@ -820,11 +850,34 @@ function initialArrayFieldBindings(initialContents: Value[]) {
   return fields;
 }
 
+function valueEquals(value1: unknown, value2: unknown) {
+  if (value1 instanceof ListObject && value2 instanceof ListObject)
+    return value1.equals(value2);
+  return value1 == value2;
+}
+
 class ListObject extends JavaObject {
   length: number;
-  constructor(elementType: Type, initialContents: Value[]) {
+  constructor(public elementType: Type, initialContents: Value[]) {
     super(new ListType(elementType), initialArrayFieldBindings(initialContents));
     this.length = initialContents.length;
+  }
+  getElements() {
+    let result = [];
+    for (let i = 0; i < this.length; i++)
+      result.push(this.fields[i].value);
+    return result;
+  }
+  plus(other: ListObject) {
+    return new ListObject(this.elementType, this.getElements().concat(other.getElements()));
+  }
+  equals(v2: ListObject) {
+    if (this.length != v2.length)
+      return false;
+    for (let i = 0; i < this.length; i++)
+      if (!valueEquals(this.fields[i].value, v2.fields[i].value))
+        return false;
+    return true;
   }
 }
 
@@ -1015,6 +1068,9 @@ class CallExpression extends Expression {
 }
 
 abstract class Type {
+  isAddable() {
+    return false;
+  }
   constructor() {}
   toHTML() {
     let text = this.toString();
@@ -1039,6 +1095,7 @@ abstract class Type {
 
 class InferredType extends Type {
   type: Type|null = null;
+  isAddable_: true|undefined;
   constructor() {
     super();
   }
@@ -1048,6 +1105,8 @@ class InferredType extends Type {
       return true;
     if (this.type != null)
       return this.type.equals(other);
+    if (this.isAddable_ && !other.isAddable())
+      return false;
     this.type = other;
     return true;
   }
@@ -1055,6 +1114,11 @@ class InferredType extends Type {
     return this.type == null ? "?" : this.type.toString();
   }
   defaultValue() { return this.type ? this.type.defaultValue() : null; }
+  isAddable(): boolean {
+      if (this.type)
+        return this.type.isAddable();
+      return this.isAddable_ == true;
+  }
 }
 
 class AnyType extends Type {
@@ -1069,6 +1133,9 @@ class IntType extends Type {
   constructor() { super(); }
   defaultValue() { return 0; }
   toString() { return "int"; }
+  isAddable(): boolean {
+      return true;
+  }
 }
 
 let intType = new IntType();
@@ -1112,13 +1179,16 @@ class ListType extends ReferenceType {
   constructor(public elementType: Type) {
     super();
   }
-  toString() { return "list"; }
-  toHTML() { return "list"; }
+  toString() { return "list[" + this.elementType.toString() + "]"; }
+  toHTML() { return this.toString(); }
   equals(other: Type): boolean {
     other = other.unwrapInferredType();
     if (other instanceof InferredType)
       return other.equals(this);
     return other instanceof ListType && this.elementType.equals(other.elementType);
+  }
+  isAddable(): boolean {
+      return true;
   }
 }
 
@@ -1134,7 +1204,7 @@ class ImplicitTypeExpression extends ASTNode {
   type: any;
   constructor(type?: Type) {
     super(null as unknown as Loc, null as unknown as Loc);
-    this.type = type || intType;
+    this.type = type || new InferredType();
   }
   resolve() {
     return this.type;
@@ -1356,12 +1426,18 @@ class Declaration extends ASTNode {
 }
 
 class ParameterDeclaration extends Declaration {
+  proofOutlineVariable: Var_|undefined;
   constructor(loc: Loc, public type: TypeExpression, public nameLoc: Loc, name: string) {
     super(loc, name);
   }
 
   check() {
     this.type.resolve();
+  }
+  getProofOutlineVariable(onError: () => never): Var_ {
+    if (!this.proofOutlineVariable)
+      this.proofOutlineVariable = mkVar(this.name, parseProofOutlineType(this.type.type!, onError));
+    return this.proofOutlineVariable;
   }
 }
 
@@ -1426,7 +1502,11 @@ class MethodDeclaration extends AbstractMethodDeclaration {
   }
 
   checkProofOutlines() {
-    let env = this.parameterDeclarations.reduceRight((acc, d) => EnvCons(d.name, acc), EnvNil);
+    let env = this.parameterDeclarations.reduceRight((acc, d) => {
+      return EnvCons(d.getProofOutlineVariable(() => {
+        return d.executionError(`Parameters of type ${d.type.type!.toString()} are not yet supported in proof outlines`);
+      }), acc)
+    }, EnvNil);
     let outlineStart = null;
     let outlineStartEnv = null;
     let total = null;
@@ -1455,29 +1535,67 @@ class MethodDeclaration extends AbstractMethodDeclaration {
   }
 }
 
+const intListSort = TSort("list[int]");
+
+function parseProofOutlineType(t: Type, onError: () => never) {
+  t = t.unwrapInferredType();
+  if (t == intType)
+    return TInt;
+  else if (t == booleanType)
+    return TBool;
+  else if (t instanceof ListType && t.elementType.unwrapInferredType() == intType)
+    return intListSort;
+  return onError();
+}
+
+const intListPlusConst = mkConst("+", TFun(intListSort, TFun(intListSort, intListSort)));
+const intListCons = mkConst("Cons", TFun(TInt, TFun(intListSort, intListSort)));
+const intListNil = mkConst("Nil", intListSort);
+
+function mkIntListTerm(l: Loc, elems: Term_[]): Term_ {
+  return elems.reduceRight((acc, t) => App(l, App(l, Const(l, intListCons), t), acc), Const(l, intListNil));
+}
+
 function parseProofOutlineExpression(e: Expression): Term_ {
   if (e instanceof IntLiteral)
     return Val(e.loc, +e.value);
   else if (e instanceof BooleanLiteral)
     if (e.value)
-      return BinOp(e.loc, Eq, Val(e.loc, 0), Val(e.loc, 0));
+      return BinOp(e.loc, Eq(TInt), Val(e.loc, 0), Val(e.loc, 0));
     else
-      return BinOp(e.loc, Eq, Val(e.loc, 0), Val(e.loc, 1));
+      return BinOp(e.loc, Eq(TInt), Val(e.loc, 0), Val(e.loc, 1));
   else if (e instanceof VariableExpression)
-    return Var(e.loc, e.name);
+    return Var(e.loc, e.getProofOutlineVariable(() => {
+      e.executionError(`Variables of type '${e.binding!.declaration.type.type}' are not yet supported in proof outlines`);
+    }));
   else if (e instanceof BinaryOperatorExpression) {
     const t1 = parseProofOutlineExpression(e.leftOperand);
     const t2 = parseProofOutlineExpression(e.rightOperand);
     let op = null;
     switch (e.operator) {
-      case '+': op = Add; break;
+      case '+':
+        if (e.leftOperand.type!.unwrapInferredType() instanceof ListType)
+          return App(e.loc, App(e.loc, Const(e.loc, intListPlusConst), t1), t2);
+        else if (e.leftOperand.type!.unwrapInferredType() == intType)
+          op = Add;
+        else
+          throw new Error();
+        break;
       case '-': op = Sub; break;
-      case '==': op = Eq; break;
+      case '==':
+        op = Eq(parseProofOutlineType(e.leftOperand.type!, () => {
+          e.executionError(`Comparing values of type ${e.leftOperand.type!} is not yet supported`);
+        }));
+        break;
       case '<=': op = Le; break;
       case '>=': return BinOp(e.loc, Le, t2, t1);
       case '<': return BinOp(e.loc, Le, BinOp(e.loc, Add, t1, Val(e.loc, 1)), t2);
       case '>': return BinOp(e.loc, Le, BinOp(e.loc, Add, t2, Val(e.loc, 1)), t1);
-      case '!=': return Not(e.loc, BinOp(e.loc, Eq, t1, t2));
+      case '!=':
+        const tp = parseProofOutlineType(e.leftOperand.type!, () => {
+          e.executionError(`Comparing values of type ${e.leftOperand.type!} is not yet supported`);
+        });
+        return Not(e.loc, BinOp(e.loc, Eq(tp), t1, t2));
       case '&&': op = And; break;
       default:
         e.executionError("This binary operator is not yet supported in a proof outline");
@@ -1493,11 +1611,9 @@ function parseProofOutlineExpression(e: Expression): Term_ {
     }
   } else if (e instanceof CallExpression) {
     const parseType = (t: Type) => {
-      if (t == intType)
-        return TInt;
-      else if (t == booleanType)
-        return TBool;
-      return e.callee.executionError("Calls of functions with a parameter or result of type '" + t.toString() + "' are not yet supported in a proof outline");
+      return parseProofOutlineType(t, () => {
+        return e.callee.executionError("Calls of functions with a parameter or result of type '" + t.toString() + "' are not yet supported in a proof outline");
+      });
     };
     const constType = e.method!.parameterDeclarations.reduceRight(
       (acc, p) => TFun(parseType(p.type.type!), acc),
@@ -1505,8 +1621,12 @@ function parseProofOutlineExpression(e: Expression): Term_ {
     );
     return e.arguments.reduce(
       (acc, arg) => App(e.loc, acc, parseProofOutlineExpression(arg)),
-      Const(e.callee.loc, e.method!.name, constType)
+      Const(e.callee.loc, mkConst(e.method!.name, constType))
     );
+  } else if (e instanceof ListExpression) {
+    if (e.elementType.type!.unwrapInferredType() != intType)
+      e.executionError("Lists whose elements are not int values are not yet supported in a proof outline");
+    return mkIntListTerm(e.loc, e.elementExpressions.map(parseProofOutlineExpression));
   } else
     e.executionError("This expression form is not yet supported in a proof outline");
 }
@@ -1670,7 +1790,11 @@ function parseProofOutline(stmts: Statement[], i: number, precededByAssert: bool
     const justif = precededByAssert && stmt.comment != null ? parseJustifications(stmt.comment) : JustifNil;
     return Seq(Assert(stmt.loc, body, justif), parseProofOutline(stmts, i + 1, true));
   } else if (stmt instanceof ExpressionStatement && stmt.expr instanceof AssignmentExpression && stmt.expr.op == '=' && stmt.expr.lhs instanceof VariableExpression) {
-    return Seq(Assign(stmt.loc, stmt.expr.lhs.name, parseProofOutlineExpression(stmt.expr.rhs)), parseProofOutline(stmts, i + 1, false));
+    const lhs = stmt.expr.lhs;
+    const x = stmt.expr.lhs.getProofOutlineVariable(() => {
+      return stmt.executionError(`Assigning to variables of type ${lhs.type} is not yet supported.`);
+    });
+    return Seq(Assign(stmt.loc, x, parseProofOutlineExpression(stmt.expr.rhs)), parseProofOutline(stmts, i + 1, false));
   } else if (stmt instanceof IfStatement) {
     if (stmt.elseBody == null)
       return stmt.executionError("'if' statements in proof outlines must have an 'else' branch. Insert 'else: pass'");
@@ -2552,6 +2676,12 @@ class LawInfo {
   constructor(public comment: Comment_, public name: string, public law: Law_) {}
 }
 
+function conjunctsOf(e: Expression): Expression[] {
+  if (e instanceof BinaryOperatorExpression && e.operator == '&&')
+    return conjunctsOf(e.leftOperand).concat(conjunctsOf(e.rightOperand));
+  return [e];
+}
+
 function checkLaws() {
   laws = {};
   for (const comment of lawComments) {
@@ -2563,18 +2693,26 @@ function checkLaws() {
     const name = text.slice(wetIndex + 3, colonIndex).trim();
     const implication = text.substring(colonIndex + 1);
     const arrowIndex = implication.indexOf('==>');
-    if (arrowIndex < 0)
-      throw new LocError(comment.loc(), "Law must be of the form 'Wet NAME: PREMISES ==> CONCLUSION'");
-    const premiseText = implication.slice(0, arrowIndex);
-    const premisePos = comment.start + colonIndex + 1;
-    const premise = parseExpression((start, end) => comment.locFactory(premisePos + start, premisePos + end), premiseText);
-    const conclusionText = implication.substring(arrowIndex + 3);
-    const conclusionPos = premisePos + arrowIndex + 3
+    const premisesPos = comment.start + colonIndex + 1;
+    let premises: Expression[];
+    let conclusionPos: number;
+    let conclusionText;
+    if (0 <= arrowIndex) {
+      const premisesText = implication.slice(0, arrowIndex);
+      premises = conjunctsOf(parseExpression((start, end) => comment.locFactory(premisesPos + start, premisesPos + end), premisesText));
+      conclusionPos = premisesPos + arrowIndex + 3;
+      conclusionText = implication.substring(arrowIndex + 3);
+    } else {
+      premises = [];
+      conclusionPos = premisesPos;
+      conclusionText = implication;
+    }
     const conclusion = parseExpression((start, end) => comment.locFactory(conclusionPos + start, conclusionPos + end), conclusionText);
     const scope = new Scope(null, true);
-    premise.checkAgainst(scope, booleanType);
+    premises.forEach(e => e.checkAgainst(scope, booleanType));
     conclusion.checkAgainst(scope, booleanType);
-    laws[name] = new LawInfo(comment, name, Law(parseProofOutlineExpression(premise), parseProofOutlineExpression(conclusion)));
+    const premisesParsed = premises.map(parseProofOutlineExpression).reduceRight((acc, t) => TermsCons(t, acc), TermsNil);
+    laws[name] = new LawInfo(comment, name, Law(premisesParsed, parseProofOutlineExpression(conclusion)));
   }
 }
 
@@ -2716,12 +2854,12 @@ async function evaluateExpression(step: boolean) {
     parseDeclarationsBox();
     let exprText = expressionEditor.getValue();
     let e = parseExpression(mkLocFactory(expressionEditor), exprText);
-    //e.check_(toplevelScope);
+    e.check_(toplevelScope);
     currentBreakCondition = () => step;
     await e.evaluate(toplevelScope);
     let [v] = pop(1);
     let valueText;
-    if (e.type instanceof ReferenceType) {
+    if (e.type!.unwrapInferredType() instanceof ReferenceType) {
       let varName = '$' + ++syntheticVariableCount;
       toplevelScope.bindings[varName] = new SyntheticVariableBinding(varName, v);
       valueText = varName;
@@ -3067,43 +3205,54 @@ assert my_min(3, 1, 2) == 1
 assert my_min(3, 2, 1) == 1`,
   expression: `my_min(30, 20, 10)`
 }, {
-  title: 'Aantal sterren',
+  title: 'List full of ones',
   declarations:
-`#def aantal_sterren(n):
+`def repeat(n, xs):
+    if n == 0:
+        return []
+    else:
+        return repeat(n - 1, xs) + xs
 
-    # Examen MI 4/6/21
+# Wet LeAntisym: x <= y <= z ==> x == y
+# Wet RepeatZero: repeat(0, xs) == []
+# Wet RepeatPlusOne: 0 <= n ==> repeat(n + 1, xs) == repeat(n, xs) + xs
 
-    #assert 0 <= n # PRECONDITION PARTIAL CORRECTNESS
+def ones(n):
 
-    #assert 0 <= n <= n and "" == 0 * "*" and n - n == 0 # Z of NulSterren
-    #assert 0 <= n <= n and "" == (n - n) * "*" # Herschrijven met 3 in 2
-    #i = n
-    #assert 0 <= i <= n and "" == (n - i) * "*"
-    #res = ""
-    #assert 0 <= i <= n and res == (n - i) * "*"
-    #while 0 < i:
-        #assert 0 <= i <= n and res == (n - i) * "*" and 0 < i
-        #assert 0 <= i <= n and res == (n - i) * "*" and 0 < i and res + "*" == res + "*" # EqRefl
-        #assert 0 <= i - 1 <= n and res + "*" == (n - i) * "*" + "*" and 0 <= n - i # Z op 4 of Z of 2 of Herschrijven met 3 in 5
-        #assert 0 <= i - 1 <= n and res + "*" == (n - i + 1) * "*" and n - i + 1 == n - (i - 1) # Herschrijven met PlusEenSterren op 4 in 3 of Z
-        #assert 0 <= i - 1 <= n and res + "*" == (n - (i - 1)) * "*" # Herschrijven met 4 in 3
-        #res = res + "*"
-        #assert 0 <= i - 1 <= n and res == (n - (i - 1)) * "*"
-        #i = i - 1
-        #assert 0 <= i <= n and res == (n - i) * "*"
-    #assert 0 <= i <= n and res == (n - i) * "*" and not 0 < i
-    #assert 0 <= i <= n and res == (n - i) * "*" and i <= 0 # Z op 4
-    #assert 0 == i and res == (n - i) * "*" # LeAntisym op 1 en 4
-    #assert res == (n - 0) * "*" and n - 0 == n # Herschrijven met 1 in 2 of Z
+    # Exam MI 4/6/21
 
-    #assert res == n * "*" # Herschrijven met 2 in 1 # POSTCONDITION
+    assert 0 <= n # PRECONDITION PARTIAL CORRECTNESS
 
-    #return res
+    assert 0 <= n <= n and [] == repeat(0, [1]) and n - n == 0 # Z of RepeatZero
+    assert 0 <= n <= n and [] == repeat(n - n, [1]) # Herschrijven met 4 in 3
+    i = n
+    assert 0 <= i <= n and [] == repeat(n - i, [1])
+    res = []
+    assert 0 <= i <= n and res == repeat(n - i, [1])
+    while 0 < i:
+        assert 0 <= i <= n and res == repeat(n - i, [1]) and 0 < i
+        assert 0 <= i <= n and res == repeat(n - i, [1]) and 0 < i and res + [1] == res + [1]
+        assert 0 <= i - 1 <= n and res + [1] == repeat(n - i, [1]) + [1] and 0 <= n - i # Z op 4 of Z op 2 of Herschrijven met 3 in 5
+        assert 0 <= i - 1 <= n and res + [1] == repeat(n - i, [1]) + [1] and 0 <= n - i and repeat(n - i + 1, [1]) == repeat(n - i, [1]) + [1] # RepeatPlusOne op 4
+        assert 0 <= i - 1 <= n and res + [1] == repeat(n - i + 1, [1]) and n - i + 1 == n - (i - 1) # Herschrijven met 5 in 3 of Z
+        assert 0 <= i - 1 <= n and res + [1] == repeat(n - (i - 1), [1]) # Herschrijven met 4 in 3
+        res = res + [1]
+        assert 0 <= i - 1 <= n and res == repeat(n - (i - 1), [1])
+        i = i - 1
+        assert 0 <= i <= n and res == repeat(n - i, [1])
+    assert 0 <= i <= n and res == repeat(n - i, [1]) and not 0 < i
+    assert 0 <= i <= n and res == repeat(n - i, [1]) and i <= 0 # Z op 4
+    assert 0 == i and res == repeat(n - i, [1]) # LeAntisym op 1 en 4
+    assert res == repeat(n - 0, [1]) and n - 0 == n # Herschrijven met 1 in 2 of Z
+
+    assert res == repeat(n, [1]) # Herschrijven met 2 in 1 # POSTCONDITION
+
+    return res
 `,
   statements:
-`#assert aantal_sterren(2) == "**"
-#assert aantal_sterren(3) == "***"`,
-  expression: ``
+`assert ones(2) == [1, 1]
+assert ones(3) == [1, 1, 1]`,
+  expression: `ones(4)`
 }, {
   title: 'Faculty',
   declarations:

@@ -19,10 +19,10 @@ Inductive term_equiv: term -> term -> Prop :=
   term_equiv ta1 tb1 ->
   term_equiv ta2 tb2 ->
   term_equiv (BinOp la op ta1 ta2) (BinOp lb op tb1 tb2)
-| Eq_equiv' la lb ta1 ta2 tb1 tb2:
+| Eq_equiv' tp la lb ta1 ta2 tb1 tb2:
   term_equiv ta1 tb2 ->
   term_equiv ta2 tb1 ->
-  term_equiv (BinOp la Eq ta1 ta2) (BinOp lb Eq tb1 tb2)
+  term_equiv (BinOp la (Eq tp) ta1 ta2) (BinOp lb (Eq tp) tb1 tb2)
 | Not_equiv la lb ta tb:
   term_equiv ta tb ->
   term_equiv (Not la ta) (Not lb tb)
@@ -36,6 +36,7 @@ Inductive term_equiv: term -> term -> Prop :=
 
 Definition binop_eq_dec(o1 o2: binop): {o1 = o2} + {o1 <> o2}.
 decide equality.
+apply type_eq_dec.
 Defined.
 
 Definition const_eq_dec(c1 c2: const): {c1 = c2} + {c1 <> c2}.
@@ -57,14 +58,14 @@ Defined.
 Fixpoint term_equivb(t1 t2: term){struct t1}: bool :=
   match t1, t2 with
     Val _ z1, Val _ z2 => Z.eqb z1 z2
-  | Var _ x1, Var _ x2 => if string_dec x1 x2 then true else false
+  | Var _ x1, Var _ x2 => if var_eq_dec x1 x2 then true else false
   | BinOp _ op1 ta1 tb1, BinOp _ op2 ta2 tb2 =>
     if binop_eq_dec op1 op2 then
       term_equivb ta1 ta2 && term_equivb tb1 tb2 ||
-      if binop_eq_dec op1 Eq then
-        term_equivb ta1 tb2 && term_equivb tb1 ta2
-      else
-        false
+      match op1 with
+        Eq _ => term_equivb ta1 tb2 && term_equivb tb1 ta2
+      | _ => false
+      end
     else
       false
   | Not _ t1, Not _ t2 => term_equivb t1 t2
@@ -82,7 +83,7 @@ Proof.
   - apply Z.eqb_eq in H.
     subst.
     constructor.
-  - destruct (string_dec x x0); try congruence.
+  - destruct (var_eq_dec x x0); try congruence.
     subst.
     constructor.
   - destruct (binop_eq_dec op op0); try congruence. subst.
@@ -93,14 +94,13 @@ Proof.
       apply IHt1_1 in H.
       apply IHt1_2 in H0.
       constructor; assumption.
-    + destruct (binop_eq_dec op0 Eq).
-      * subst.
-        apply andb_prop in H.
-        destruct H.
-        apply IHt1_1 in H.
-        apply IHt1_2 in H0.
-        constructor; assumption.
-      * discriminate.
+    + destruct op0; try discriminate.
+      subst.
+      apply andb_prop in H.
+      destruct H.
+      apply IHt1_1 in H.
+      apply IHt1_2 in H0.
+      constructor; assumption.
   - apply IHt1 in H.
     constructor; assumption.
   - destruct (const_eq_dec c c0).
@@ -160,7 +160,7 @@ Fixpoint poly_of(t: term): poly :=
 
 Definition is_Z_tautology(P: term): bool :=
   match P with
-    BinOp l Eq t1 t2 =>
+    BinOp l (Eq TInt) t1 t2 =>
     let p1 := poly_of t1 in
     let p2 := poly_of t2 in
     match poly_subtract p1 p2 with
@@ -180,11 +180,6 @@ Definition is_Z_tautology(P: term): bool :=
 
 Local Open Scope string_scope.
 
-Goal is_Z_tautology (BinOp (locN 0) Eq (Val (locN 1) 0) (BinOp (locN 2) Sub (Var (locN 3) "n") (Var (locN 4) "n"))) = true.
-Proof.
-  reflexivity.
-Qed.
-
 Fixpoint normalize_eq(t: term): term :=
   match t with
     Not l1 (Not l2 t) => normalize_eq t
@@ -194,13 +189,13 @@ Fixpoint normalize_eq(t: term): term :=
 
 Definition is_Z_entailment(H C: term): bool :=
   match normalize_eq C with
-    BinOp lC Eq t1 t2 =>
+    BinOp lC (Eq TInt) t1 t2 =>
     let pC := poly_subtract (poly_of t1) (poly_of t2) in
     match pC with
       [] => true
     | (zC0, tC0)::pC0 =>
       match normalize_eq H with
-        BinOp lH Eq t1 t2 =>
+        BinOp lH (Eq TInt) t1 t2 =>
         let pH := poly_subtract (poly_of t1) (poly_of t2) in
         match poly_lookup tC0 pH with
           None => false
@@ -225,7 +220,7 @@ Definition is_Z_entailment(H C: term): bool :=
       [] => Z.leb 0 Cconst
     | (zC0, tC0)::pC0 =>
       match normalize_eq H with
-        BinOp lH Eq t1 t2 =>
+        BinOp lH (Eq TInt) t1 t2 =>
         let pH := poly_subtract (poly_of t1) (poly_of t2) in
         match poly_lookup tC0 pH with
           None => false
@@ -253,20 +248,6 @@ Definition is_Z_entailment(H C: term): bool :=
   | _ => false
   end.
 
-Goal is_Z_entailment
-  (BinOp (locN 0) Le (BinOp (locN 2) Add (Var (locN 1) "z") (Val (locN 3) 1)) (Var (locN 4) "x"))
-  (BinOp (locN 5) Le (Var (locN 6) "z") (Var (locN 7) "x")) = true.
-Proof.
-  reflexivity.
-Qed.
-
-Goal is_Z_entailment
-  (BinOp (locN 0) Eq (Var (locN 1) "r") (BinOp (locN 2) Sub (Var (locN 3) "n") (Var (locN 4) "i")))
-  (BinOp (locN 5) Eq (BinOp (locN 6) Add (Var (locN 7) "r") (Val (locN 8) 1)) (BinOp (locN 9) Sub (Var (locN 10) "n") (BinOp (locN 11) Sub (Var (locN 12) "i") (Val (locN 13) 1)))) = true.
-Proof.
-  reflexivity.
-Qed.
-
 Fixpoint rewrites(lhs rhs t: term): list term :=
   (if term_equivb t lhs then [rhs] else if term_equivb t rhs then [lhs] else []) ++
   match t with
@@ -283,7 +264,7 @@ Fixpoint rewrites(lhs rhs t: term): list term :=
   end.
 
 Definition update(f: var -> option term)(x: var)(t: term)(y: var): option term :=
-  if string_dec x y then Some t else f y.
+  if var_eq_dec x y then Some t else f y.
 
 Fixpoint match_term f c C :=
   match c, C with
@@ -299,7 +280,7 @@ Fixpoint match_term f c C :=
       match match_term f t1 t1' with
         None =>
         match op with
-          Eq =>
+          Eq _ =>
           match match_term f t1 t2' with
             Some f =>
             match_term f t2 t1'
@@ -358,7 +339,7 @@ Definition conjunct_entailment_checker_for(Hs: list term)(j: justif): result (te
     match nth_error Hs k1 with
     | Some H =>
       match H with
-      | BinOp leq Eq LHS RHS =>
+      | BinOp leq (Eq _) LHS RHS =>
         match nth_error Hs k2 with
           None => Error (lk2, "Conjunct index out of range")
         | Some H2 =>
@@ -389,7 +370,12 @@ Fixpoint check_all{A B E}(checker: A -> result B E)(xs: list A): result (list B)
 Definition check_conjunct_entailment(Hs: list term)(checkers: list (term -> bool))(C: term): result unit (loc * string) :=
   if
     (existsb (term_equivb C) Hs ||
-     existsb (fun checker => checker C) checkers)%bool
+     existsb (fun checker => checker C) checkers ||
+     match C with
+       BinOp _ (Eq _) t1 t2 =>
+       term_equivb t1 t2
+     | _ => false
+     end)%bool
   then
     Ok tt
   else
@@ -409,10 +395,12 @@ Definition check_entailment(P P': term)(js: list justif): result unit (loc * str
 
 Fixpoint subst(x: var)(t: term)(t0: term): term :=
   match t0 with
-    Var l y => if string_dec x y then t else t0
+  | Val _ _ => t0
+  | Var l y => if var_eq_dec x y then t else t0
   | BinOp l op t1 t2 => BinOp l op (subst x t t1) (subst x t t2)
   | Not l t0 => Not l (subst x t t0)
-  | _ => t0
+  | Const _ _ => t0
+  | App l tf targ => App l (subst x t tf) (subst x t targ)
   end.
 
 Fixpoint ends_with_assert(s: stmt)(P: term): bool :=
@@ -474,14 +462,14 @@ Fixpoint check_proof_outline(total: bool)(s: stmt): result unit (loc * string) :
   | Assert laInv Inv _ ;; While lw C body ;; ((Assert laQ Q _ ;; _) as s) =>
     if total then
       match body with
-        Assign las x V ;; ((Assert laP P _ ;; body1) as body0) =>
-        if existsb (String.eqb x) (free_vars Inv) then
-          Error (laInv, "Variable '" ++ x ++ "' must not appear in the loop invariant")
-        else if existsb (String.eqb x) (free_vars C) then
-          Error (lw, "Variable '" ++ x ++ "' must not appear in the loop condition")
-        else if existsb (String.eqb x) (assigned_vars body1) then
-          Error (loc_of_stmt body1, "Variable '" ++ x ++ "' must not be assigned to in the loop body")
-        else if negb (term_equivb' P (BinOp lw And Inv (BinOp lw And C (BinOp lw Eq V (Var lw x))))) then
+        Assign las ((_, TInt) as x) V ;; ((Assert laP P _ ;; body1) as body0) =>
+        if existsb (var_eqb x) (free_vars Inv) then
+          Error (laInv, "Variable '" ++ fst x ++ "' must not appear in the loop invariant")
+        else if existsb (var_eqb x) (free_vars C) then
+          Error (lw, "Variable '" ++ fst x ++ "' must not appear in the loop condition")
+        else if existsb (var_eqb x) (assigned_vars body1) then
+          Error (loc_of_stmt body1, "Variable '" ++ fst x ++ "' must not be assigned to in the loop body")
+        else if negb (term_equivb' P (BinOp lw And Inv (BinOp lw And C (BinOp lw (Eq TInt) V (Var lw x))))) then
           Error (laP, "Loop body precondition does not match conjunction of invariant, condition, and equality of variant and variable")
         else if negb (ends_with_assert body1 (BinOp lw And Inv (BinOp lw And (BinOp lw Le (Val lw 0) V) (BinOp lw Le (BinOp lw Add V (Val lw 1)) (Var lw x))))) then
           Error (loc_of_stmt body1, "Loop body does not end with an assert statement that asserts the conjunction of the loop invariant and that the variant is nonnegative and less than the variable")
@@ -519,54 +507,3 @@ Fixpoint check_proof_outline(total: bool)(s: stmt): result unit (loc * string) :
   | Assert laP P _ ;; Pass lp => Ok tt
   | _ => Error (loc_of_stmt s, "Malformed proof outline")
   end.
-
-Goal check_proof_outline false (
-  Assert (locN 0) (BinOp (locN 1) Eq (Var (locN 2) "x") (Val (locN 3) 1)) [];;
-  Assert (locN 4) (BinOp (locN 5) Eq (Var (locN 6) "x") (Val (locN 7) 1)) [JZ (locN 8)];;
-  Pass (locN 9)
-) = Ok tt.
-Proof.
-  reflexivity.
-Qed.
-
-Goal check_proof_outline false (
-  Assert (locN 0) (BinOp (locN 1) And (BinOp (locN 2) Eq (Var (locN 3) "x") (Val (locN 4) 1)) (BinOp (locN 5) Eq (Var (locN 6) "y") (Val (locN 7) 1))) [];;
-  Assert (locN 8) (BinOp (locN 9) And (BinOp (locN 10) Eq (Var (locN 11) "y") (Val (locN 12) 1)) (BinOp (locN 13) Eq (Var (locN 14) "x") (Val (locN 15) 1))) [JZ (locN 16)];;
-  Pass (locN 17)
-) = Ok tt.
-Proof.
-  reflexivity.
-Qed.
-
-Goal check_proof_outline false (
-    Assert (locN 0) (BinOp (locN 1) And (BinOp (locN 2) Eq (Var (locN 14) "r") (BinOp (locN 3) Sub (Var (locN 4) "n") (Var (locN 5) "i"))) (Not (locN 6) (BinOp (locN 7) Eq (Var (locN 8) "i") (Val (locN 9) 0)))) [];;
-    Assert (locN 10) (BinOp (locN 11) Eq (BinOp (locN 12) Add (Var (locN 13) "r") (Val (locN 15) 1)) (BinOp (locN 16) Sub (Var (locN 17) "n") (BinOp (locN 18) Sub (Var (locN 19) "i") (Val (locN 20) 1)))) [JZ_at (locN 21) (locN 22) 0];;
-    Assign (locN 23) "i" (BinOp (locN 24) Sub (Var (locN 25) "i") (Val (locN 26) 1));;
-    Assert (locN 27) (BinOp (locN 28) Eq (BinOp (locN 29) Add (Var (locN 30) "r") (Val (locN 31) 1)) (BinOp (locN 32) Sub (Var (locN 33) "n") (Var (locN 34) "i"))) [];;
-    Assign (locN 35) "r" (BinOp (locN 36) Add (Var (locN 37) "r") (Val (locN 38) 1));;
-    Assert (locN 39) (BinOp (locN 40) Eq (Var (locN 41) "r") (BinOp (locN 42) Sub (Var (locN 43) "n") (Var (locN 44) "i"))) [];;
-    Pass (locN 45)
-) = Ok tt.
-Proof.
-  reflexivity.
-Qed.
-
-(*
-Goal ends_with_assert (
-    Assert (BinOp And (BinOp Eq (Var "r") (BinOp Sub (Var "n") (Var "i"))) (Not (BinOp Eq (Var "i") (Val 0)))) None;;
-    Assert (BinOp Eq (BinOp Add (Var "r") (Val 1)) (BinOp Sub (Var "n") (BinOp Sub (Var "i") (Val 1)))) (Some (JZ_at (locN 0) (locN 1) 0));;
-    Assign "i" (BinOp Sub (Var "i") (Val 1));;
-    Assert (BinOp Eq (BinOp Add (Var "r") (Val 1)) (BinOp Sub (Var "n") (Var "i"))) None;;
-    Assign "r" (BinOp Add (Var "r") (Val 1));;
-    Assert (BinOp Eq (Var "r") (BinOp Sub (Var "n") (Var "i"))) None;;
-    Pass
-) (BinOp Eq (Var "r") (BinOp Sub (Var "n") (Var "i"))) = true.
-Proof.
-  reflexivity.
-Qed.
-*)
-
-Goal check_proof_outline false outline1 = Ok tt.
-Proof.
-  reflexivity.
-Qed.

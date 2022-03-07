@@ -27,7 +27,7 @@ node_modules:
 	npm ci
 
 pylearner.js: node_modules pylearner.ts
-	-npx tsc
+	npx tsc
 
 test: proof_checker.js pylearner.js
 	node test.js

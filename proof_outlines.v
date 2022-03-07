@@ -31,20 +31,53 @@ Extract Constant loc_eq_dec => "(fun l1 l2 => failwith ""Not implemented"")".
 Parameter locN: Z -> loc. (* Used only in examples in Coq. *)
 Extract Constant locN => "(fun _ -> failwith ""Not implemented"")".
 
-Inductive type := TInt | TBool | TFun(argType resultType: type).
+Definition sort := string.
+
+Inductive type := TInt | TBool | TFun(argType resultType: type) | TSort(s: sort).
 
 Definition type_eq_dec(t1 t2: type): {t1 = t2} + {t1 <> t2}.
 decide equality.
+apply string_dec.
 Defined.
 
 Definition type_eqb(t1 t2: type): bool :=
   if type_eq_dec t1 t2 then true else false.
 
-Definition var := string.
+Local Open Scope string_scope.
+
+Fixpoint string_of_type tp :=
+  match tp with
+    TInt => "TInt"
+  | TBool => "TBool"
+  | TFun tpa tpr => "TFun (" ++ string_of_type tpa ++ ") (" ++ string_of_type tpr ++ ")"
+  | TSort s => s
+  end.
+
+Definition var_name := string.
+Definition var: Set := var_name * type.
+
+Definition var_eq_dec(x1 x2: var): {x1 = x2} + {x1 <> x2}.
+decide equality.
+- apply type_eq_dec.
+- apply string_dec.
+Defined.
+
+Definition var_eqb x1 x2 := if var_eq_dec x1 x2 then true else false.
+
 Definition const_name := string.
 Definition const: Set := const_name * type.
 
-Inductive binop := Add | Sub | Eq | Le | And.
+Inductive binop := Add | Sub | Eq(tp: type) | Le | And.
+
+Fixpoint string_of_binop op :=
+  match op with
+    Add => "+"
+  | Sub => "-"
+  | Eq tp => "==(" ++ string_of_type tp ++ ")"
+  | Le => "<="
+  | And => "&&"
+  end.
+
 Inductive term :=
 | Val(l: loc)(z: Z)
 | Var(l: loc)(x: var)
@@ -53,6 +86,18 @@ Inductive term :=
 | Const(l: loc)(c: const)
 | App(l: loc)(f arg: term)
 .
+
+Require HexString.
+
+Fixpoint string_of_term t :=
+  match t with
+    Val l z => HexString.of_Z z
+  | Var l (x, tp) => x ++ ":(" ++ string_of_type tp ++ ")"
+  | BinOp l op t1 t2 => "(" ++ string_of_term t1 ++ " " ++ string_of_binop op ++ " " ++ string_of_term t2 ++ ")"
+  | Not l t => "!" ++ string_of_term t
+  | App l f arg => "((" ++ string_of_term f ++ ")(" ++ string_of_term arg ++ "))"
+  | Const l (cn, ct) => "[" ++ cn ++ "](" ++ string_of_type ct ++ ")"
+  end.
 
 Definition loc_of_term(t: term) :=
   match t with
@@ -91,33 +136,6 @@ Fixpoint loc_of_stmt(s: stmt) :=
   | Pass l => l
   end.
 
-Definition True_term l := BinOp l Eq (Val l 0) (Val l 0).
+Definition True_term l := BinOp l (Eq TInt) (Val l 0) (Val l 0).
 
 Infix ";;" := Seq (at level 60, right associativity).
-
-Local Open Scope string_scope.
-
-Import List.ListNotations.
-
-Definition outline1: stmt :=
-  Assert (locN 0) (True_term (locN 1)) [];;
-  Assert (locN 2) (BinOp (locN 3) Eq (Val (locN 4) 0) (BinOp (locN 5) Sub (Var (locN 6) "n") (Var (locN 7) "n"))) [JZ (locN 8)];;
-  Assign (locN 9) "i" (Var (locN 10) "n");;
-  Assert (locN 11) (BinOp (locN 12) Eq (Val (locN 13) 0) (BinOp (locN 14) Sub (Var (locN 15) "n") (Var (locN 16) "i"))) [];;
-  Assign (locN 17) "r" (Val (locN 18) 0);;
-  Assert (locN 19) (BinOp (locN 20) Eq (Var (locN 21) "r") (BinOp (locN 22) Sub (Var (locN 23) "n") (Var (locN 24) "i"))) [];;
-  While (locN 25) (Not (locN 26) (BinOp (locN 27) Eq (Var (locN 28) "i") (Val (locN 29) 0))) (
-    Assert (locN 30) (BinOp (locN 31) And (BinOp (locN 32) Eq (Var (locN 33) "r") (BinOp (locN 34) Sub (Var (locN 35) "n") (Var (locN 36) "i"))) (Not (locN 37) (BinOp (locN 38) Eq (Var (locN 39) "i") (Val (locN 40) 0)))) [];;
-    Assert (locN 41) (BinOp (locN 42) Eq (BinOp (locN 43) Add (Var (locN 44) "r") (Val (locN 45) 1)) (BinOp (locN 46) Sub (Var (locN 47) "n") (BinOp (locN 48) Sub (Var (locN 49) "i") (Val (locN 50) 1)))) [JZ_at (locN 51) (locN 52) 0];;
-    Assign (locN 53) "i" (BinOp (locN 54) Sub (Var (locN 55) "i") (Val (locN 56) 1));;
-    Assert (locN 57) (BinOp (locN 58) Eq (BinOp (locN 59) Add (Var (locN 60) "r") (Val (locN 61) 1)) (BinOp (locN 62) Sub (Var (locN 63) "n") (Var (locN 64) "i"))) [];;
-    Assign (locN 65) "r" (BinOp (locN 66) Add (Var (locN 67) "r") (Val (locN 68) 1));;
-    Assert (locN 69) (BinOp (locN 70) Eq (Var (locN 71) "r") (BinOp (locN 72) Sub (Var (locN 73) "n") (Var (locN 74) "i"))) [];;
-    Pass (locN 75)
-  );;
-  Assert (locN 76) (BinOp (locN 77) And (BinOp (locN 78) Eq (Var (locN 79) "r") (BinOp (locN 80) Sub (Var (locN 81) "n") (Var (locN 82) "i"))) (Not (locN 83) (Not (locN 84) (BinOp (locN 85) Eq (Var (locN 86) "i") (Val (locN 87) 0))))) [];;
-  Assert (locN 88) (BinOp (locN 89) And (BinOp (locN 90) Eq (Var (locN 91) "r") (BinOp (locN 92) Sub (Var (locN 93) "n") (Var (locN 94) "i"))) (BinOp (locN 95) Eq (Var (locN 96) "i") (Val (locN 97) 0))) [JZ_at (locN 98) (locN 99) 1];;
-  Assert (locN 100) (BinOp (locN 101) Eq (Var (locN 102) "r") (BinOp (locN 103) Sub (Var (locN 104) "n") (Val (locN 105) 0))) [JRewrite (locN 106) (locN 107) 1 (locN 108) 0];;
-  Assert (locN 109) (BinOp (locN 110) Eq (Var (locN 111) "r") (Var (locN 112) "n")) [JZ_at (locN 113) (locN 114) 0];;
-  Pass (locN 115)
-.

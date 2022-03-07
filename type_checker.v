@@ -10,13 +10,22 @@ Context (E: env).
 Fixpoint type_of(t: term): option type :=
   match t with
     Val l z => Some TInt
-  | Var l x => if in_dec string_dec x E then Some TInt else None
+  | Var l x => if in_dec var_eq_dec x E then Some (snd x) else None
   | BinOp l (Add|Sub) t1 t2 =>
     match type_of t1, type_of t2 with
       Some TInt, Some TInt => Some TInt
     | _, _ => None
     end
-  | BinOp l (Eq|Le) t1 t2 =>
+  | BinOp l (Eq tp) t1 t2 =>
+    match type_of t1, type_of t2 with
+      Some tp1, Some tp2 =>
+      if (type_eqb tp1 tp && type_eqb tp2 tp)%bool then
+        Some TBool
+      else
+        None
+    | _, _ => None
+    end
+  | BinOp l Le t1 t2 =>
     match type_of t1, type_of t2 with
       Some TInt, Some TInt => Some TBool
     | _, _ => None
@@ -55,7 +64,7 @@ Fixpoint post_env_of_stmt(E: env)(s: stmt): option env :=
     end
   | Assign l x t =>
     match type_of E t with
-      Some TInt => Some (x::E)
+      Some tp => if type_eq_dec tp (snd x) then Some (x::E) else None
     | _ => None
     end
   | Pass l => Some E
@@ -66,7 +75,7 @@ Fixpoint post_env_of_stmt(E: env)(s: stmt): option env :=
         Some E1 =>
         match post_env_of_stmt E s2 with
           Some E2 =>
-          Some (filter (fun x => existsb (String.eqb x) E2) E1)
+          Some (filter (fun x => existsb (var_eqb x) E2) E1)
         | _ => None
         end
       | _ => None
@@ -88,12 +97,3 @@ Fixpoint post_env_of_stmt(E: env)(s: stmt): option env :=
     | None => None
     end
   end.
-
-Import ListNotations.
-
-Local Open Scope string_scope.
-
-Goal post_env_of_stmt ["n"] outline1 = Some ["r"; "i"; "n"].
-Proof.
-  reflexivity.
-Qed.
