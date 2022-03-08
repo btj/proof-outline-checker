@@ -435,9 +435,15 @@ Fixpoint check_all{A B E}(checker: A -> result B E)(xs: list A): result (list B)
     end
   end.
 
+Fixpoint normalize_conjunct t :=
+  match t with
+    Not _ (Not _ t) => normalize_conjunct t
+  | _ => t
+  end.
+
 Definition check_conjunct_entailment(Hs: list term)(checkers: list (term -> bool))(C: term): result unit (loc * string) :=
   if
-    (existsb (term_equivb C) Hs ||
+    (existsb (term_equivb (normalize_conjunct C)) (map normalize_conjunct Hs) ||
      existsb (fun checker => checker C) checkers ||
      match C with
        BinOp _ (Eq _) t1 t2 =>

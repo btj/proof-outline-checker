@@ -282,7 +282,7 @@ class ImplicitVariableDeclaration {
 
 class Scope {
 
-  bindings: {[index: string]: any} = {};
+  bindings: {[index: string]: Binding} = {};
 
   constructor(public outerScope: Scope|null, public inferBindings?: boolean) {}
   
@@ -529,7 +529,8 @@ class BinaryOperatorExpression extends Expression {
       case '<<': return v1 << v2;
       case '==':
         return valueEquals(v1, v2);
-      case '!=': return v1 != v2;
+      case '!=':
+        return !valueEquals(v1, v2);
       case '<': return v1 < v2;
       case '<=': return v1 <= v2;
       case '>': return v1 > v2;
@@ -599,7 +600,7 @@ class AssignmentExpression extends Expression {
       if (this.lhs instanceof VariableExpression && env.tryLookup(this.lhs.name) == null) {
         this.declaration = new VariableDeclarationStatement(this.loc, this.instrLoc!, new ImplicitTypeExpression(), this.lhs.loc, this.lhs.name, this.rhs);
         this.declaration.check(env);
-        this.lhs.binding = env.bindings[this.lhs.name];
+        this.lhs.binding = env.bindings[this.lhs.name] as LocalBinding;
         return voidType;
       }
       let t = this.lhs.check_(env);
@@ -1013,11 +1014,11 @@ class SubscriptExpression extends Expression {
     return (pop?: (nbOperands: number) => Value[]) => {
       let [target, index] = pop!(2);
       if (!(target instanceof ListObject))
-        this.executionError(target + " is not an array");
+        this.executionError(target + " is not a list");
       if (index < 0)
-        this.executionError("Negative array index " + index);
+        this.executionError("Negative list index " + index);
       if (target.length <= index)
-        this.executionError("Array index " + index + " not less than array length " + target.length);
+        this.executionError("List index " + index + " not less than list length " + target.length);
       return target.fields[index];
     }
   }
@@ -1026,6 +1027,65 @@ class SubscriptExpression extends Expression {
     let bindingThunk = await this.evaluateBinding(env);
     await this.breakpoint();
     this.push(bindingThunk(pop).value);
+  }
+}
+
+class LenExpression extends Expression {
+  constructor(loc: Loc, instrLoc: Loc, public target: Expression) {
+    super(loc, instrLoc);
+  }
+
+  check(env: Scope) {
+    let targetType = this.target.check_(env);
+    if (!targetType.isListType())
+      this.executionError("Argument of 'len' must be a list");
+    return intType;
+  }
+
+  async evaluate(env: Scope) {
+    await this.target.evaluate(env);
+    let [target] = pop(1);
+    if (!(target instanceof ListObject))
+      this.executionError(target + ' is not a list');
+    this.push(target.length);
+  }
+}
+
+class SliceExpression extends Expression {
+  constructor(loc: Loc, instrLoc: Loc, public target: Expression, public startIndex: Expression, public endIndex: Expression) {
+    super(loc, instrLoc);
+  }
+
+  check(env: Scope) {
+    let targetType = this.target.check_(env);
+    if (!targetType.isListType())
+      this.executionError('Target of slice expression must be a list');
+    this.startIndex.checkAgainst(env, intType);
+    this.endIndex.checkAgainst(env, intType);
+    return targetType;
+  }
+
+  async evaluate(env: Scope) {
+    await this.target.evaluate(env);
+    await this.startIndex.evaluate(env);
+    await this.endIndex.evaluate(env);
+    let [target, startIndex, endIndex] = pop(3);
+    if (!(target instanceof ListObject))
+      this.executionError(target + " is not a list");
+    if (startIndex < 0)
+      startIndex += target.length;
+    if (endIndex < 0)
+      endIndex += target.length;
+    if (startIndex < 0)
+      startIndex = 0;
+    if (target.length < endIndex)
+      endIndex = target.length;
+    let sliceElements = [];
+    if (endIndex <= startIndex)
+      sliceElements = [];
+    else
+      sliceElements = target.getElements().slice(startIndex, endIndex);
+    this.push(new ListObject(target.elementType, sliceElements));
   }
 }
 
@@ -1040,7 +1100,7 @@ class CallExpression extends Expression {
   check(env: Scope) {
     if (this.callee instanceof VariableExpression) {
       if (!has(toplevelMethods, this.callee.name))
-        this.executionError("No such method: " + this.callee.name);
+        this.executionError("No such function: " + this.callee.name);
       this.method = toplevelMethods[this.callee.name];
       if (this.method.parameterDeclarations.length != this.arguments.length)
         this.executionError("Incorrect number of arguments");
@@ -1048,7 +1108,7 @@ class CallExpression extends Expression {
         this.arguments[i].checkAgainst(env, this.method.parameterDeclarations[i].type.type!);
       return this.method.returnType.type!;
     } else
-      this.executionError("The callee expression must be a method name");
+      this.executionError("The callee expression must be a function name");
   }
 
   async evaluate(env: Scope) {
@@ -1069,6 +1129,9 @@ class CallExpression extends Expression {
 }
 
 abstract class Type {
+  isListType() {
+    return false;
+  }
   isAddable() {
     return false;
   }
@@ -1116,9 +1179,15 @@ class InferredType extends Type {
   }
   defaultValue() { return this.type ? this.type.defaultValue() : null; }
   isAddable(): boolean {
-      if (this.type)
-        return this.type.isAddable();
-      return this.isAddable_ == true;
+    if (this.type)
+      return this.type.isAddable();
+    return this.isAddable_ = true;
+  }
+  isListType(): boolean {
+    if (this.type)
+      return this.type.isListType();
+    this.type = new ListType(new InferredType());
+    return true;
   }
 }
 
@@ -1189,6 +1258,9 @@ class ListType extends ReferenceType {
     return other instanceof ListType && this.elementType.equals(other.elementType);
   }
   isAddable(): boolean {
+      return true;
+  }
+  isListType(): boolean {
       return true;
   }
 }
@@ -1544,12 +1616,14 @@ function parseProofOutlineType(t: Type, onError: () => never) {
     return TInt;
   else if (t == booleanType)
     return TBool;
-  else if (t instanceof ListType && t.elementType.unwrapInferredType() == intType)
+  else if (t instanceof ListType && t.elementType.equals(intType))
     return intListSort;
   return onError();
 }
 
 const intListPlusConst = mkConst("+", TFun(intListSort, TFun(intListSort, intListSort)));
+const intListSliceConst = mkConst("slice", TFun(intListSort, TFun(TInt, TFun(TInt, intListSort))));
+const intListLenConst = mkConst("len", TFun(intListSort, TInt));
 const intListCons = mkConst("Cons", TFun(TInt, TFun(intListSort, intListSort)));
 const intListNil = mkConst("Nil", intListSort);
 
@@ -1625,9 +1699,17 @@ function parseProofOutlineExpression(e: Expression): Term_ {
       Const(e.callee.loc, mkConst(e.method!.name, constType))
     );
   } else if (e instanceof ListExpression) {
-    if (e.elementType.type!.unwrapInferredType() != intType)
+    if (!e.elementType.type!.equals(intType))
       e.executionError("Lists whose elements are not int values are not yet supported in a proof outline");
     return mkIntListTerm(e.loc, e.elementExpressions.map(parseProofOutlineExpression));
+  } else if (e instanceof LenExpression) {
+    if (!(e.target.type?.unwrapInferredType() as ListType).elementType.equals(intType))
+      e.executionError("Lists whose elements are not int values are not yet supported in a proof outline");
+    return App(e.loc, Const(e.loc, intListLenConst), parseProofOutlineExpression(e.target));
+  } else if (e instanceof SliceExpression) {
+    if (!(e.target.type?.unwrapInferredType() as ListType).elementType.equals(intType))
+      e.executionError("Lists whose elements are not int values are not yet supported in a proof outline");
+    return App(e.loc, App(e.loc, App(e.loc, Const(e.loc, intListSliceConst), parseProofOutlineExpression(e.target)), parseProofOutlineExpression(e.startIndex)), parseProofOutlineExpression(e.endIndex));
   } else
     e.executionError("This expression form is not yet supported in a proof outline");
 }
@@ -2112,16 +2194,36 @@ class Parser {
             }
           }
           this.expect(')');
-          e = new CallExpression(this.dupLoc(), instrLoc, e, args);
+          if (e instanceof VariableExpression && e.name == 'len') {
+            if (args.length != 1)
+              return this.parseError("'len' expects one argument");
+            e = new LenExpression(this.dupLoc(), instrLoc, args[0]);
+          } else
+            e = new CallExpression(this.dupLoc(), instrLoc, e, args);
           break;
         }
         case '[': {
           this.pushStart();
           this.next();
           let instrLoc = this.popLoc();
-          let index = this.parseExpression();
-          this.expect(']');
-          e = new SubscriptExpression(this.dupLoc(), instrLoc, e, index);
+          let startIndex;
+          if (this.token == ':')
+            startIndex = new IntLiteral(instrLoc, 0);
+          else
+            startIndex = this.parseExpression();
+          if (this.token == ':') {
+            this.next();
+            let endIndex;
+            if (this.token == ']')
+              endIndex = new LenExpression(instrLoc, instrLoc, e);
+            else
+              endIndex = this.parseExpression();
+            this.expect(']');
+            e = new SliceExpression(this.dupLoc(), instrLoc, e, startIndex, endIndex);
+          } else {
+            this.expect(']');
+            e = new SubscriptExpression(this.dupLoc(), instrLoc, e, startIndex);
+          }
           break;
         }
         case '++':
@@ -2738,6 +2840,10 @@ function checkLaws() {
     const scope = new Scope(null, true);
     premises.forEach(e => e.checkAgainst(scope, booleanType));
     conclusion.checkAgainst(scope, booleanType);
+    for (const x in scope.bindings) {
+      // If the type is an unbound inferred type, bind to list type...
+      (scope.bindings[x].value as Type).isListType();
+    }
     const premisesParsed = premises.map(parseProofOutlineExpression).reduceRight((acc, t) => TermsCons(t, acc), TermsNil);
     laws[name] = new LawInfo(comment, name, Law(premisesParsed, parseProofOutlineExpression(conclusion)));
   }
@@ -3279,6 +3385,41 @@ def ones(n):
 `assert ones(2) == [1, 1]
 assert ones(3) == [1, 1, 1]`,
   expression: `ones(4)`
+}, {
+  title: 'Concatenation (partial correctness)',
+  declarations:
+`# Wet Nonempty: xs != [] ==> xs == xs[:1] + xs[1:]
+# Wet ConcatAssoc: xs + (ys + zs) == (xs + ys) + zs
+# Wet ConcatEmpty: xs + [] == xs
+
+def concat(xs, ys):
+
+    assert ys != [] # PRECONDITION PARTIAL CORRECTNESS
+    assert ys != [] and xs + ys == xs + ys
+    assert xs + (ys[:1] + ys[1:]) == xs + ys # Herschrijven met Nonempty op 1 in 2
+    assert (xs + ys[:1]) + ys[1:] == xs + ys # Herschrijven met ConcatAssoc in 1
+    result = xs + ys[:1]
+    assert result + ys[1:] == xs + ys
+    todo = ys[1:]
+    assert result + todo == xs + ys # LUSINVARIANT
+    while todo != []:
+        assert result + todo == xs + ys and todo != []
+        assert result + (todo[:1] + todo[1:]) == xs + ys # Herschrijven met Nonempty op 2 in 1
+        assert (result + todo[:1]) + todo[1:] == xs + ys # Herschrijven met ConcatAssoc in 1
+        result = result + todo[:1]
+        assert result + todo[1:] == xs + ys
+        todo = todo[1:]
+        assert result + todo == xs + ys
+    assert result + todo == xs + ys and not todo != []
+    assert result + todo == xs + ys and todo == []
+    assert result + [] == xs + ys # Herschrijven met 2 in 1
+    assert result == xs + ys # Herschrijven met ConcatEmpty in 1 # POSTCONDITION
+
+    return result`,
+  statements:
+`assert concat([1, 2, 3], [4, 5]) == [1, 2, 3, 4, 5]
+assert concat([], [10]) == [10]`,
+  expression: `concat([100, 200], [300, 400])`
 }, {
   title: 'Faculty',
   declarations:
