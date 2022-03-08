@@ -3577,6 +3577,60 @@ def number_of_zeros(xs):
 assert number_of_zeros([0, 10, 0, 5, 3, 0, 7]) == 3`,
   expression: `number_of_zeros([1, 2, 0, 3, 4]) == 1`
 }, {
+  title: 'Maximum of a list',
+  declarations:
+`def max(xs):
+    if len(xs) == 1:
+        return xs[0]
+    else:
+        m = max(xs[1:])
+        if xs[0] <= m:
+            return m
+        else:
+            return xs[0]
+
+# Wet MaxFirst: 1 <= len(xs) ==> max(xs[:1]) == xs[0]
+# Wet MaxGreater: 1 <= i + 1 <= len(xs) and max(xs[:i]) < xs[i] ==> max(xs[:i + 1]) == xs[i]
+# Wet MaxNotGreater: 1 <= i + 1 <= len(xs) and not max(xs[:i]) < xs[i] ==> max(xs[:i + 1]) == max(xs[:i])
+# Wet LeAntisym: x <= y <= x ==> x == y
+# Wet SliceFull: xs[:] == xs
+
+def maximum(xs):
+
+    assert 1 <= len(xs) # PRECONDITION PARTIAL CORRECTNESS
+    assert 1 <= 1 <= len(xs) and xs[0] == max(xs[:1]) # Z of MaxFirst op 1
+    res = xs[0]
+    assert 1 <= 1 <= len(xs) and res == max(xs[:1])
+    i = 1
+    assert 1 <= i <= len(xs) and res == max(xs[:i])
+    while i < len(xs):
+        assert 1 <= i <= len(xs) and res == max(xs[:i]) and i < len(xs)
+        if res < xs[i]:
+            assert 1 <= i <= len(xs) and res == max(xs[:i]) and i < len(xs) and res < xs[i]
+            assert 1 <= i + 1 <= len(xs) and max(xs[:i]) < xs[i] # Z op 1 of Herschrijven met 3 in 5
+            assert 1 <= i + 1 <= len(xs) and xs[i] == max(xs[:i + 1]) # MaxGreater op 1 en 2 en 3
+            res = xs[i]
+            assert 1 <= i + 1 <= len(xs) and res == max(xs[:i + 1])
+        else:
+            assert 1 <= i <= len(xs) and res == max(xs[:i]) and i < len(xs) and not res < xs[i]
+            assert 1 <= i + 1 <= len(xs) and res == max(xs[:i]) and not max(xs[:i]) < xs[i] # Z op 1 of Herschrijven met 3 in 5
+            assert 1 <= i + 1 <= len(xs) and res == max(xs[:i + 1]) # Herschrijven met MaxNotGreater op 1 en 2 en 4 in 3
+            pass
+            assert 1 <= i + 1 <= len(xs) and res == max(xs[:i + 1])
+        assert 1 <= i + 1 <= len(xs) and res == max(xs[:i + 1])
+        i = i + 1
+        assert 1 <= i <= len(xs) and res == max(xs[:i])
+    assert 1 <= i <= len(xs) and res == max(xs[:i]) and not i < len(xs)
+    assert len(xs) <= i <= len(xs) and res == max(xs[:i]) # Z op 4
+    assert res == max(xs[:len(xs)]) # Herschrijven met LeAntisym op 1 en 2 in 3
+    assert res == max(xs) # Herschrijven met SliceFull in 1 # POSTCONDITION
+
+    return res`,
+  statements:
+`assert maximum([3, 1, 4, 2]) == 4
+assert maximum([8]) == 8`,
+  expression: `maximum([-3, -2])`
+}, {
   title: 'Faculty',
   declarations:
 `# precondition: x is positive
