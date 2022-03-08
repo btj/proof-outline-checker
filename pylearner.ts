@@ -3392,6 +3392,8 @@ assert ones(3) == [1, 1, 1]`,
 # Wet ConcatAssoc: xs + (ys + zs) == (xs + ys) + zs
 # Wet ConcatEmpty: xs + [] == xs
 
+# Exam MI 11/8/21
+
 def concat(xs, ys):
 
     assert ys != [] # PRECONDITION PARTIAL CORRECTNESS
@@ -3410,6 +3412,46 @@ def concat(xs, ys):
         assert result + todo[1:] == xs + ys
         todo = todo[1:]
         assert result + todo == xs + ys
+    assert result + todo == xs + ys and not todo != []
+    assert result + todo == xs + ys and todo == []
+    assert result + [] == xs + ys # Herschrijven met 2 in 1
+    assert result == xs + ys # Herschrijven met ConcatEmpty in 1 # POSTCONDITION
+
+    return result`,
+  statements:
+`assert concat([1, 2, 3], [4, 5]) == [1, 2, 3, 4, 5]
+assert concat([], [10]) == [10]`,
+  expression: `concat([100, 200], [300, 400])`
+}, {
+  title: 'Concatenation (total correctness)',
+  declarations:
+`# Wet Nonempty: xs != [] ==> xs == xs[:1] + xs[1:]
+# Wet ConcatAssoc: xs + (ys + zs) == (xs + ys) + zs
+# Wet ConcatEmpty: xs + [] == xs
+# Wet LenNonneg: 0 <= len(xs)
+# Wet LenSlice: xs != [] ==> len(xs[1:]) < len(xs)
+
+# Exam MI 11/8/21
+
+def concat(xs, ys):
+
+    assert ys != [] # PRECONDITION
+    assert ys != [] and xs + ys == xs + ys
+    assert xs + (ys[:1] + ys[1:]) == xs + ys # Herschrijven met Nonempty op 1 in 2
+    assert (xs + ys[:1]) + ys[1:] == xs + ys # Herschrijven met ConcatAssoc in 1
+    result = xs + ys[:1]
+    assert result + ys[1:] == xs + ys
+    todo = ys[1:]
+    assert result + todo == xs + ys # LUSINVARIANT
+    while todo != []:
+        oude_variant = len(todo)
+        assert result + todo == xs + ys and todo != [] and len(todo) == oude_variant
+        assert result + (todo[:1] + todo[1:]) == xs + ys and len(todo[1:]) < len(todo) == oude_variant # Herschrijven met Nonempty op 2 in 1 of LenSlice op 2
+        assert (result + todo[:1]) + todo[1:] == xs + ys and 0 <= len(todo[1:]) < oude_variant # Herschrijven met ConcatAssoc in 1 of LenNonneg of Herschrijven met 3 in 2
+        result = result + todo[:1]
+        assert result + todo[1:] == xs + ys and 0 <= len(todo[1:]) < oude_variant
+        todo = todo[1:]
+        assert result + todo == xs + ys and 0 <= len(todo) < oude_variant
     assert result + todo == xs + ys and not todo != []
     assert result + todo == xs + ys and todo == []
     assert result + [] == xs + ys # Herschrijven met 2 in 1
