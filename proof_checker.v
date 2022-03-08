@@ -578,6 +578,10 @@ Fixpoint check_proof_outline(total: bool)(s: stmt): result unit (loc * string) :
       | _ =>
         Error (loc_of_stmt body, "Body of loop must start with assert")
       end
-  | Assert laP P _ ;; Pass lp => Ok tt
-  | _ => Error (loc_of_stmt s, "Malformed proof outline")
+  | Assert laP P _ ;; Pass lp ;; ((Assert laQ Q _ ;; _) as s) =>
+    if negb (term_equivb P Q) then
+      Error (laP, "The precondition of a 'pass' statement must match its postcondition")
+    else
+      check_proof_outline total s
+  | Assert laP P _ ;; Pass lp => Ok tt  | _ => Error (loc_of_stmt s, "Malformed proof outline")
   end.

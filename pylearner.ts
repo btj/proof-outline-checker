@@ -1002,10 +1002,10 @@ class SubscriptExpression extends Expression {
 
   check(env: Scope) {
     let targetType = this.target.check_(env);
-    if (!(targetType instanceof ListType))
-      this.executionError("Target of subscript expression must be of array type");
+    if (!(targetType.isListType()))
+      this.executionError("Target of subscript expression must be a list");
     this.index.checkAgainst(env, intType);
-    return targetType.elementType;
+    return (targetType.unwrapInferredType() as ListType).elementType;
   }
 
   async evaluateBinding(env: Scope) {
@@ -1345,6 +1345,15 @@ class VariableDeclarationStatement extends Statement {
   }
 }
 
+class PassStatement extends Statement {
+  constructor(loc: Loc, instrLoc: Loc) {
+    super(loc, instrLoc);
+  }
+
+  check(env: Scope) {}
+  async execute(env: Scope) {}
+}
+
 class ExpressionStatement extends Statement {
   constructor(loc: Loc, instrLoc: Loc, public expr: Expression) {
     super(loc, instrLoc);
@@ -1624,6 +1633,7 @@ function parseProofOutlineType(t: Type, onError: () => never) {
 const intListPlusConst = mkConst("+", TFun(intListSort, TFun(intListSort, intListSort)));
 const intListSliceConst = mkConst("slice", TFun(intListSort, TFun(TInt, TFun(TInt, intListSort))));
 const intListLenConst = mkConst("len", TFun(intListSort, TInt));
+const intListSubscriptConst = mkConst("at", TFun(intListSort, TFun(TInt, TInt)));
 const intListCons = mkConst("Cons", TFun(TInt, TFun(intListSort, intListSort)));
 const intListNil = mkConst("Nil", intListSort);
 
@@ -1703,13 +1713,17 @@ function parseProofOutlineExpression(e: Expression): Term_ {
       e.executionError("Lists whose elements are not int values are not yet supported in a proof outline");
     return mkIntListTerm(e.loc, e.elementExpressions.map(parseProofOutlineExpression));
   } else if (e instanceof LenExpression) {
-    if (!(e.target.type?.unwrapInferredType() as ListType).elementType.equals(intType))
+    if (!(e.target.type!.unwrapInferredType() as ListType).elementType.equals(intType))
       e.executionError("Lists whose elements are not int values are not yet supported in a proof outline");
     return App(e.loc, Const(e.loc, intListLenConst), parseProofOutlineExpression(e.target));
   } else if (e instanceof SliceExpression) {
-    if (!(e.target.type?.unwrapInferredType() as ListType).elementType.equals(intType))
+    if (!(e.target.type!.unwrapInferredType() as ListType).elementType.equals(intType))
       e.executionError("Lists whose elements are not int values are not yet supported in a proof outline");
     return App(e.loc, App(e.loc, App(e.loc, Const(e.loc, intListSliceConst), parseProofOutlineExpression(e.target)), parseProofOutlineExpression(e.startIndex)), parseProofOutlineExpression(e.endIndex));
+  } else if (e instanceof SubscriptExpression) {
+    if (!(e.target.type!.unwrapInferredType() as ListType).elementType.equals(intType))
+      e.executionError("Lists whose elements are not int values are not yet supported in a proof outline");
+    return App(e.loc, App(e.loc, Const(e.loc, intListSubscriptConst), parseProofOutlineExpression(e.target)), parseProofOutlineExpression(e.index));
   } else
     e.executionError("This expression form is not yet supported in a proof outline");
 }
@@ -1916,6 +1930,8 @@ function parseProofOutline(stmts: Statement[], i: number, precededByAssert: bool
       return stmt.body.executionError("In a proof outline, the body of a loop must be a block.");
     const body = parseProofOutline(stmt.body.stmts, 0, false);
     return Seq(While(stmt.loc, cond, body), parseProofOutline(stmts, i + 1, false));
+  } else if (stmt instanceof PassStatement) {
+    return Seq(Pass(stmt.loc), parseProofOutline(stmts, i + 1, false));
   } else
     return stmt.executionError("This statement form is not yet supported in a proof outline.");
 }
@@ -2500,6 +2516,13 @@ class Parser {
         let condition = this.parseExpression();
         const comment = this.expect('EOL');
         return new AssertStatement(this.popLoc(), instrLoc, condition, comment);
+      }
+      case 'pass': {
+        this.pushStart();
+        this.next();
+        let instrLoc = this.popLoc();
+        this.expect('EOL');
+        return new PassStatement(this.popLoc(), instrLoc);
       }
     }
     let e = this.parseExpression();
@@ -3498,6 +3521,61 @@ def concat(xs, ys):
 `assert concat([1, 2, 3], [4, 5]) == [1, 2, 3, 4, 5]
 assert concat([], [10]) == [10]`,
   expression: `concat([100, 200], [300, 400])`
+}, {
+  title: 'Number of zeros',
+  declarations:
+`def nb_zeros(xs):
+    if xs == []:
+        return 0
+    elif xs[0] == 0:
+        return 1 + nb_zeros(xs[1:])
+    else:
+        return 0 + nb_zeros(xs[1:])
+
+# Wet LeAntisym: a <= b <= a ==> a == b
+# Wet LenNonnegative: 0 <= len(xs)
+# Wet SliceFull: xs[:] == xs
+# Wet NbZerosEmpty: nb_zeros(xs[i:i]) == 0
+# Wet NbZerosZero: 0 <= i and i < len(xs) and xs[i] == 0 ==> nb_zeros(xs[:i + 1]) == nb_zeros(xs[:i]) + 1
+# Wet NbZerosNonzero: 0 <= i and i < len(xs) and xs[i] != 0 ==> nb_zeros(xs[:i + 1]) == nb_zeros(xs[:i])
+
+def number_of_zeros(xs):
+
+    assert True # PRECONDITION PARTIAL CORRECTNESS
+    assert 0 <= 0 <= len(xs) and 0 == nb_zeros(xs[:0]) # Z of LenNonnegative of NbZerosEmpty
+    i = 0
+    assert 0 <= i <= len(xs) and 0 == nb_zeros(xs[:i])
+    n = 0
+    assert 0 <= i <= len(xs) and n == nb_zeros(xs[:i]) # Lusinvariant
+    while i < len(xs):
+        assert 0 <= i <= len(xs) and n == nb_zeros(xs[:i]) and i < len(xs)
+        if xs[i] == 0:
+            assert 0 <= i <= len(xs) and n == nb_zeros(xs[:i]) and i < len(xs) and xs[i] == 0
+            assert 0 <= i < len(xs) and n == nb_zeros(xs[:i]) and nb_zeros(xs[:i]) + 1 == nb_zeros(xs[:i + 1]) # NbZerosZero op 1 en 4 en 5
+            assert 0 <= i + 1 <= len(xs) and n + 1 == nb_zeros(xs[:i + 1]) # Z op 1 of Z op 2 of Herschrijven met 3 in 4
+            n = n + 1
+            assert 0 <= i + 1 <= len(xs) and n == nb_zeros(xs[:i + 1])
+        else:
+            assert 0 <= i <= len(xs) and n == nb_zeros(xs[:i]) and i < len(xs) and not xs[i] == 0
+            assert 0 <= i < len(xs) and n == nb_zeros(xs[:i]) and xs[i] != 0
+            assert 0 <= i < len(xs) and n == nb_zeros(xs[:i]) and nb_zeros(xs[:i]) == nb_zeros(xs[:i + 1]) # NbZerosNonzero op 1 en 2 en 4
+            assert 0 <= i + 1 <= len(xs) and n == nb_zeros(xs[:i + 1]) # Z op 1 of Z op 2 of Herschrijven met 3 in 4
+            pass
+            assert 0 <= i + 1 <= len(xs) and n == nb_zeros(xs[:i + 1])
+        assert 0 <= i + 1 <= len(xs) and n == nb_zeros(xs[:i + 1])
+        i = i + 1
+        assert 0 <= i <= len(xs) and n == nb_zeros(xs[:i])
+    assert 0 <= i <= len(xs) and n == nb_zeros(xs[:i]) and not i < len(xs)
+    assert len(xs) <= i <= len(xs) and n == nb_zeros(xs[:i]) # Z op 4
+    assert i == len(xs) and n == nb_zeros(xs[:i]) # LeAntisym op 1 en 2
+    assert n == nb_zeros(xs[:len(xs)]) # Herschrijven met 1 in 2
+    assert n == nb_zeros(xs) # Herschrijven met SliceFull in 1 # POSTCONDITION
+    
+    return n`,
+  statements:
+`assert number_of_zeros([1, 0, 2, 3, 0]) == 2
+assert number_of_zeros([0, 10, 0, 5, 3, 0, 7]) == 3`,
+  expression: `number_of_zeros([1, 2, 0, 3, 4]) == 1`
 }, {
   title: 'Faculty',
   declarations:
