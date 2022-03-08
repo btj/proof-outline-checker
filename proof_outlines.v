@@ -116,6 +116,7 @@ Inductive justif :=
 | JZ_at(l: loc)(kl: loc)(k: nat)
 | JRewrite(l: loc)(k1l: loc)(k1: nat)(k2l: loc)(k2: nat)
 | JLaw(l: loc)(law_: law)(ks: list (loc * nat))
+| JRewriteWithLaw(l: loc)(law_: law)(ks: list (loc * nat))(lk: loc)(k: nat)
 .
 Inductive stmt :=
 | Assert(l: loc)(t: term)(j: list justif)

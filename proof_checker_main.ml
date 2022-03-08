@@ -93,6 +93,7 @@ let _ =
       method _LawAppIndicesCons (l: loc) (k: int) (ks: (loc, nat) prod list): (loc, nat) prod list = Cons (Pair (l, nat_of_int k), ks)
       method _Law (ps: term list) (c: term): law = Law (ps, c)
       method _JLaw (l: loc) (_law: law) (ks: (loc, nat) prod list): justif = JLaw (l, _law, ks)
+      method _JRewriteWithLaw (l: loc) (_law: law) (ks: (loc, nat) prod list) (lk: loc) (k: int): justif = JRewriteWithLaw (l, _law, ks, lk, nat_of_int k)
       method _Assert (l: loc) (t: term) (j: justif list): stmt = Assert (l, t, j)
       method _Assign (l: loc) (x: var) (t: term): stmt = Assign (l, x, t)
       method _If (l: loc) (t: term) (s1: stmt) (s2: stmt): stmt = If (l, t, s1, s2)

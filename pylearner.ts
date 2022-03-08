@@ -39,6 +39,7 @@ declare function Law(p: TermList_, c: Term_): Law_;
 declare var LawAppIndicesNil: LawAppIndices_;
 declare function LawAppIndicesCons(lk: Loc, k: number, ks: LawAppIndices_): LawAppIndices_;
 declare function JLaw(l: Loc, law: Law_, ks: LawAppIndices_): Justif_;
+declare function JRewriteWithLaw(l: Loc, law: Law_, ks: LawAppIndices_, lk: Loc, k: number): Justif_;
 declare var JustifNil: JustifList_;
 declare function JustifCons(j: Justif_, js: JustifList_): JustifList_;
 declare function Pass(l: Loc): Stmt_;
@@ -1733,12 +1734,37 @@ function parseJustification(scanner: JustificationScanner) {
       const l = scanner.loc();
       scanner.nextToken();
       scanner.expect('met');
-      const lk1 = scanner.loc();
-      const k1 = expectConjunctIndex(scanner);
-      scanner.expect('in');
-      const lk2 = scanner.loc();
-      const k2 = expectConjunctIndex(scanner);
-      return JRewrite(l, lk1, k1, lk2, k2);
+      if (scanner.token == '<NUMBER>') {
+        const lk1 = scanner.loc();
+        const k1 = expectConjunctIndex(scanner);
+        scanner.expect('in');
+        const lk2 = scanner.loc();
+        const k2 = expectConjunctIndex(scanner);
+        return JRewrite(l, lk1, k1, lk2, k2);
+      }
+      if (has(laws, scanner.token)) {
+        const llawName = scanner.loc();
+        const lawName = scanner.token;
+        scanner.nextToken();
+        const ks: [Loc, number][] = [];
+        if (scanner.token == 'op') {
+          scanner.expect('op');
+          for (;;) {
+            const lk = scanner.loc();
+            const k = expectConjunctIndex(scanner);
+            ks.push([lk, k]);
+            if (scanner.token != 'en')
+              break;
+            scanner.expect('en');
+          }
+        }
+        const ks_ = ks.reduceRight((acc, [lk, k]) => LawAppIndicesCons(lk, k, acc), LawAppIndicesNil);
+        scanner.expect('in');
+        const lk = scanner.loc();
+        const k = expectConjunctIndex(scanner);
+        return JRewriteWithLaw(l, laws[lawName].law, ks_, lk, k);
+      }
+      scanner.error("Conjunct index or Law name expected");
     }
     default:
       if (has(laws, scanner.token)) {
@@ -1757,7 +1783,8 @@ function parseJustification(scanner: JustificationScanner) {
             scanner.expect('en');
           }
         }
-        return JLaw(l, laws[lawName].law, ks.reduceRight((acc, [lk, k]) => LawAppIndicesCons(lk, k, acc), LawAppIndicesNil));
+        const ks_ = ks.reduceRight((acc, [lk, k]) => LawAppIndicesCons(lk, k, acc), LawAppIndicesNil);
+        return JLaw(l, laws[lawName].law, ks_);
       }
       scanner.error("'Z' or 'Herschrijven' or law name expected");
   }
@@ -3233,8 +3260,7 @@ def ones(n):
         assert 0 <= i <= n and res == repeat(n - i, [1]) and 0 < i
         assert 0 <= i <= n and res == repeat(n - i, [1]) and 0 < i and res + [1] == res + [1]
         assert 0 <= i - 1 <= n and res + [1] == repeat(n - i, [1]) + [1] and 0 <= n - i # Z op 4 of Z op 2 of Herschrijven met 3 in 5
-        assert 0 <= i - 1 <= n and res + [1] == repeat(n - i, [1]) + [1] and 0 <= n - i and repeat(n - i + 1, [1]) == repeat(n - i, [1]) + [1] # RepeatPlusOne op 4
-        assert 0 <= i - 1 <= n and res + [1] == repeat(n - i + 1, [1]) and n - i + 1 == n - (i - 1) # Herschrijven met 5 in 3 of Z
+        assert 0 <= i - 1 <= n and res + [1] == repeat(n - i + 1, [1]) and n - i + 1 == n - (i - 1) # Herschrijven met RepeatPlusOne op 4 in 3 of Z
         assert 0 <= i - 1 <= n and res + [1] == repeat(n - (i - 1), [1]) # Herschrijven met 4 in 3
         res = res + [1]
         assert 0 <= i - 1 <= n and res == repeat(n - (i - 1), [1])

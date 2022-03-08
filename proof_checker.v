@@ -39,6 +39,8 @@ decide equality.
 apply type_eq_dec.
 Defined.
 
+Definition binop_eqb o1 o2 := if binop_eq_dec o1 o2 then true else false.
+
 Definition const_eq_dec(c1 c2: const): {c1 = c2} + {c1 <> c2}.
 Proof.
   destruct c1 as [n1 tp1].
@@ -305,15 +307,9 @@ Fixpoint match_term f c C :=
   | _, _ => None
   end.
 
-Fixpoint law_application_checker_for(l: loc)(f: var -> option term)(Hs: list term)(ps: list term)(c: term)(ks: list (loc * nat)): result (term -> bool) (loc * string) :=
+Fixpoint match_law_premises{A}(l: loc)(f: var -> option term)(Hs: list term)(ps: list term)(ks: list (loc * nat))(cont: (var -> option term) -> result A (loc * string)): result A (loc * string) :=
   match ps, ks with
-    [], [] =>
-    Ok (fun C =>
-      match match_term f c C with
-      | None => false
-      | Some _ => true
-      end
-    )
+    [], [] => cont f
   | p::ps, (lk, k)::ks =>
     match nth_error Hs k with
     | None => Error (lk, "Conjunct index out of range")
@@ -321,10 +317,70 @@ Fixpoint law_application_checker_for(l: loc)(f: var -> option term)(Hs: list ter
       match match_term f p H with
       | None => Error (lk, "Conjunct does not match corresponding law premise")
       | Some f =>
-        law_application_checker_for l f Hs ps c ks
+        match_law_premises l f Hs ps ks cont
       end
     end
   | _, _ => Error (l, "Number of conjunct indices does not match number of law premises")
+  end.
+
+Definition law_application_checker_for(l: loc)(f: var -> option term)(Hs: list term)(ps: list term)(c: term)(ks: list (loc * nat)): result (term -> bool) (loc * string) :=
+  match_law_premises l f Hs ps ks (fun f =>
+    Ok (fun C =>
+      match match_term f c C with
+      | None => false
+      | Some _ => true
+      end
+    )
+  ).
+
+Fixpoint type_of_term t :=
+  match t with
+    Val _ _ => TInt
+  | Var _ (x, tp) => tp
+  | BinOp _ (Eq _|Le|And) _ _ => TBool
+  | BinOp _ (Add|Sub) _ _ => TInt
+  | Not _ _ => TBool
+  | Const _ (c, tp) => tp
+  | App _ t1 t2 =>
+    match type_of_term t1 with
+      TFun _ tp => tp
+    | _ => TBool (* Dummy value, never happens for well-typed terms *)
+    end
+  end.
+
+Fixpoint can_rewrite(f: var -> option term)(lhs rhs t1 t2: term): bool :=
+  term_equivb t1 t2 ||
+  type_eqb (type_of_term lhs) (type_of_term t1) && (
+    match match_term f lhs t1 with
+      Some f =>
+      match match_term f rhs t2 with
+        Some _ => true
+      | None => false
+      end
+    | _ => false
+    end ||
+    match match_term f rhs t1 with
+      Some f =>
+      match match_term f lhs t2 with
+        Some _ => true
+      | None => false
+      end
+    | _ => false
+    end
+  ) ||
+  match t1, t2 with
+  | BinOp _ op1 t11 t12, BinOp _ op2 t21 t22 =>
+    binop_eqb op1 op2 &&
+    (can_rewrite f lhs rhs t11 t21 && can_rewrite f lhs rhs t12 t22 ||
+     match op1 with
+       Eq _ => can_rewrite f lhs rhs t11 t22 && can_rewrite f lhs rhs t12 t21
+     | _ => false
+     end)
+  | Not _ t1, Not _ t2 =>
+    can_rewrite f lhs rhs t1 t2
+  | App _ t11 t12, App _ t21 t22 =>
+    can_rewrite f lhs rhs t11 t21 && can_rewrite f lhs rhs t12 t22
+  | _, _ => false
   end.
 
 Definition conjunct_entailment_checker_for(Hs: list term)(j: justif): result (term -> bool) (loc * string) :=
@@ -351,6 +407,18 @@ Definition conjunct_entailment_checker_for(Hs: list term)(j: justif): result (te
     end
   | JLaw l (Law ps c) ks =>
     law_application_checker_for l (fun _ => None) Hs ps c ks
+  | JRewriteWithLaw l (Law ps c) ks lk k =>
+    match c with
+      BinOp _ (Eq tp) lhs rhs =>
+      match_law_premises l (fun _ => None) Hs ps ks (fun f =>
+        match nth_error Hs k with
+          Some H =>
+          Ok (fun C => can_rewrite f lhs rhs H C)
+        | None => Error (lk, "Conjunct index out of range")
+        end
+      )
+    | _ => Error (l, "Conclusion of law is not an equality")
+    end
   end.
 
 Fixpoint check_all{A B E}(checker: A -> result B E)(xs: list A): result (list B) E :=
