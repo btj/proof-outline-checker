@@ -3386,6 +3386,42 @@ def ones(n):
 assert ones(3) == [1, 1, 1]`,
   expression: `ones(4)`
 }, {
+  title: 'Length of list',
+  declarations:
+`# Wet LenNonneg: 0 <= len(xs)
+# Wet LenEmpty: len([]) == 0
+# Wet LenNonempty: xs != [] ==> len(xs) == 1 + len(xs[:-1])
+
+# Exam MI 18/6/21
+
+def length(xs):
+
+    assert xs != [] # PRECONDITION PARTIAL CORRECTNESS
+    assert len(xs) == 1 + len(xs[:-1]) # LenNonempty op 1
+    todo = xs[:-1]
+    assert len(xs) == 1 + len(todo)
+    res = 1
+    assert len(xs) == res + len(todo) # LUSINVARIANT
+    while todo != []:
+        assert len(xs) == res + len(todo) and todo != []
+        assert len(xs) == res + (1 + len(todo[:-1])) # Herschrijven met LenNonempty op 2 in 1
+        assert len(xs) == (res + 1) + len(todo[:-1]) # Z op 1
+        res = res + 1
+        assert len(xs) == res + len(todo[:-1])
+        todo = todo[:-1]
+        assert len(xs) == res + len(todo)
+    assert len(xs) == res + len(todo) and not todo != []
+    assert len(xs) == res + len(todo) and todo == []
+    assert len(xs) == res + len([]) # Herschrijven met 2 in 1
+    assert len(xs) == res + 0 # Herschrijven met LenEmpty in 1
+    assert res == len(xs) # Z op 1 # POSTCONDITION
+
+    return res`,
+  statements:
+`assert length([1, 2, 3]) == 3
+assert length([4, 3, 2, 1]) == 4`,
+  expression: `length([10])`
+}, {
   title: 'Concatenation (partial correctness)',
   declarations:
 `# Wet Nonempty: xs != [] ==> xs == xs[:1] + xs[1:]
