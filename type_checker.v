@@ -11,7 +11,7 @@ Fixpoint type_of(t: term): option type :=
   match t with
     Val l z => Some TInt
   | Var l x => if in_dec var_eq_dec x E then Some (snd x) else None
-  | BinOp l (Add|Sub) t1 t2 =>
+  | BinOp l (Add|Sub|Mul) t1 t2 =>
     match type_of t1, type_of t2 with
       Some TInt, Some TInt => Some TInt
     | _, _ => None

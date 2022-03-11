@@ -65,6 +65,7 @@ let _ =
     begin object%js
       val _Add: binop = Add
       val _Sub: binop = Sub
+      val _Mul: binop = Mul
       method _Eq(tp: type0): binop = Eq0 tp
       val _Le: binop = Le
       val _And: binop = And

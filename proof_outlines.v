@@ -67,12 +67,13 @@ Definition var_eqb x1 x2 := if var_eq_dec x1 x2 then true else false.
 Definition const_name := string.
 Definition const: Set := const_name * type.
 
-Inductive binop := Add | Sub | Eq(tp: type) | Le | And.
+Inductive binop := Add | Sub | Mul | Eq(tp: type) | Le | And.
 
 Fixpoint string_of_binop op :=
   match op with
     Add => "+"
   | Sub => "-"
+  | Mul => "*"
   | Eq tp => "==(" ++ string_of_type tp ++ ")"
   | Le => "<="
   | And => "&&"

@@ -1,3 +1,4 @@
+// TODO: Have js_of_ocaml generate these declarations automatically https://github.com/ocsigen/js_of_ocaml/issues/1245
 type Env_ = {__brand: "proof_checker.env"};
 type Term_ = {__brand: "proof_checker.term"};
 type BinOp_ = {__brand: "proof_checker.binop"};
@@ -19,6 +20,7 @@ declare function Val(loc: Loc, value: number): Term_;
 declare function Var(loc: Loc, x: Var_): Term_;
 declare var Add: BinOp_;
 declare var Sub: BinOp_;
+declare var Mul: BinOp_;
 declare function Eq(type: Type_): BinOp_;
 declare var Le: BinOp_;
 declare var And: BinOp_;
@@ -1667,6 +1669,7 @@ function parseProofOutlineExpression(e: Expression): Term_ {
           throw new Error();
         break;
       case '-': op = Sub; break;
+      case '*': op = Mul; break;
       case '==':
         op = Eq(parseProofOutlineType(e.leftOperand.type!, () => {
           e.executionError(`Comparing values of type ${e.leftOperand.type!} is not yet supported`);
@@ -3708,8 +3711,7 @@ function initExamples() {
   }
 }
 
-async function testPyLearner() {
-  currentBreakCondition = () => false;
+async function testExamples(examples: Example[]) {
   for (const {declarations, statements, expression} of examples) {
     resetMachine();
     iterationCount = 0;
@@ -3733,7 +3735,18 @@ async function testPyLearner() {
     for (let m in toplevelMethods)
       toplevelMethods[m].checkProofOutlines();
   }
+}
+
+declare var secretExamples: Example[]|undefined;
+
+async function testPyLearner() {
+  currentBreakCondition = () => false;
+  await testExamples(examples);
   console.log('All tests passed!');
+  if (typeof secretExamples !== 'undefined') {
+    await testExamples(secretExamples);
+    console.log('All secret tests passed!');
+  }
 }
 
 if (typeof window === 'undefined') // We're being executed by Node.js.
