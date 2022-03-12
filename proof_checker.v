@@ -261,6 +261,48 @@ Fixpoint rewrites(lhs rhs t: term): list term :=
 Definition update(f: var -> option term)(x: var)(t: term)(y: var): option term :=
   if var_eq_dec x y then Some t else f y.
 
+Fixpoint eval_closed_term(t: term): option Z :=
+  match t with
+    Val _ z => Some z
+  | BinOp _ ((Add|Sub|Mul) as op) t1 t2 =>
+    match eval_closed_term t1, eval_closed_term t2 with
+      Some z1, Some z2 =>
+      Some
+        match op with
+          Add => (z1 + z2)%Z
+        | Sub => (z1 - z2)%Z
+        | Mul => (z1 * z2)%Z
+        | _ => 0%Z (* Dummy *)
+        end
+    | _, _ => None
+    end
+  | _ => None
+  end.
+
+Fixpoint subst'(f: var -> option term)(t: term): option term :=
+  match t with
+  | Val _ _ => Some t
+  | Var l x => f x
+  | BinOp l op t1 t2 =>
+    match subst' f t1, subst' f t2 with
+      Some t'1, Some t'2 =>
+      Some (BinOp l op t'1 t'2)
+    | _, _ => None
+    end
+  | Not l t =>
+    match subst' f t with
+      Some t' => Some (Not l t')
+    | None => None
+    end
+  | Const _ _ => Some t
+  | App l tf targ =>
+    match subst' f tf, subst' f targ with
+      Some t'f, Some t'arg =>
+      Some (App l t'f t'arg)
+    | _, _ => None
+    end
+  end.
+
 Fixpoint match_term f c C :=
   match c, C with
     Var _ x, t =>
@@ -269,7 +311,20 @@ Fixpoint match_term f c C :=
     | Some t' =>
       if term_equivb t t' then Some f else None
     end
-  | Val _ v, Val _ v' => if Z.eqb v v' then Some f else None
+  | Val _ v, t =>
+    match eval_closed_term t with
+      Some v' => if Z.eqb v v' then Some f else None
+    | None => None
+    end
+  | t, Val _ v' =>
+    match subst' f t with
+      Some t =>
+      match eval_closed_term t with
+        Some v => if Z.eqb v v' then Some f else None
+      | _ => None
+      end
+    | _ => None
+    end
   | BinOp _ op t1 t2, BinOp _ op' t1' t2' =>
     if binop_eq_dec op op' then
       match
