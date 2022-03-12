@@ -182,13 +182,6 @@ Definition is_Z_tautology(P: term): bool :=
 
 Local Open Scope string_scope.
 
-Fixpoint normalize_eq(t: term): term :=
-  match t with
-    Not l1 (Not l2 t) => normalize_eq t
-  | Not l1 (BinOp l2 Le t1 t2) => BinOp l2 Le (BinOp l2 Add t2 (Val l2 1)) t1
-  | _ => t
-  end.
-
 Definition is_Z_entailment(H C: term): bool :=
   match normalize_eq C with
     BinOp lC (Eq TInt) t1 t2 =>
@@ -279,7 +272,13 @@ Fixpoint match_term f c C :=
   | Val _ v, Val _ v' => if Z.eqb v v' then Some f else None
   | BinOp _ op t1 t2, BinOp _ op' t1' t2' =>
     if binop_eq_dec op op' then
-      match match_term f t1 t1' with
+      match
+        match match_term f t1 t1' with
+          None => None
+        | Some f =>
+          match_term f t2 t2'
+        end
+      with
         None =>
         match op with
           Eq _ =>
@@ -290,8 +289,7 @@ Fixpoint match_term f c C :=
           end
         | _ => None
         end
-      | Some f =>
-        match_term f t2 t2'
+      | Some f => Some f
       end
     else
       None

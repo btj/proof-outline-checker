@@ -479,6 +479,13 @@ class BinaryOperatorExpression extends Expression {
           this.executionError("The left-hand operand does not support addition");
         this.rightOperand.checkAgainst(env, lhsType);
         return lhsType;
+      case 'in':
+        const rhsType = this.rightOperand.check_(env).unwrapInferredType();
+        rhsType.isListType(); // Force list type if not yet inferred
+        if (!(rhsType instanceof ListType))
+          return this.executionError("The right-hand operand is not a list");
+        this.leftOperand.checkAgainst(env, rhsType.elementType);
+        return booleanType;
       case '-':
       case '*':
       case '/':
@@ -522,6 +529,10 @@ class BinaryOperatorExpression extends Expression {
         if (typeof v1 == 'number' && typeof v2 == 'number')
           return (v1 + v2)|0;
         this.executionError("Bad operands");
+      case 'in':
+        if (!(v2 instanceof ListObject))
+          return this.executionError("Right-hand operand is not a list");
+        return v2.getElements().some(e => valueEquals(e, v1));
       case '-': return (v1 - v2)|0;
       case '*': return (v1 * v2)|0;
       case '/': return (v1 / v2)|0;
@@ -1020,6 +1031,8 @@ class SubscriptExpression extends Expression {
       let [target, index] = pop!(2);
       if (!(target instanceof ListObject))
         this.executionError(target + " is not a list");
+      if (index < 0)
+        index += target.length;
       if (index < 0)
         this.executionError("Negative list index " + index);
       if (target.length <= index)
@@ -1636,6 +1649,7 @@ function parseProofOutlineType(t: Type, onError: () => never) {
 }
 
 const intListPlusConst = mkConst("+", TFun(intListSort, TFun(intListSort, intListSort)));
+const intListInConst = mkConst("in", TFun(TInt, TFun(intListSort, TBool)));
 const intListSliceConst = mkConst("slice", TFun(intListSort, TFun(TInt, TFun(TInt, intListSort))));
 const intListLenConst = mkConst("len", TFun(intListSort, TInt));
 const intListSubscriptConst = mkConst("at", TFun(intListSort, TFun(TInt, TInt)));
@@ -1671,6 +1685,8 @@ function parseProofOutlineExpression(e: Expression): Term_ {
         else
           throw new Error();
         break;
+      case 'in':
+        return App(e.loc, App(e.loc, Const(e.loc, intListInConst), t1), t2);
       case '-': op = Sub; break;
       case '*': op = Mul; break;
       case '==':
@@ -2315,13 +2331,34 @@ class Parser {
       case '<':
       case '<=':
       case '>':
-      case '>=':
+      case '>=': {
         this.pushStart();
         let op = this.token;
         this.next();
         let instrLoc = this.popLoc();
         let rhs = this.parseRelationalChain();
         return [instrLoc, e, op, rhs];
+      }
+      case 'not': {
+        this.pushStart();
+        this.next();
+        const notInstrLoc = this.popLoc();
+        if (this.token != 'in')
+          this.parseError("'in' expected");
+        this.pushStart();
+        this.next();
+        const inInstrLoc = this.popLoc();
+        let rhs = this.parseAdditiveExpression();
+        const loc = this.popLoc();
+        return new UnaryOperatorExpression(loc, notInstrLoc, 'not', new BinaryOperatorExpression(loc, inInstrLoc, e, 'in', rhs));
+      }
+      case 'in': {
+        this.pushStart();
+        this.next();
+        let instrLoc = this.popLoc();
+        let rhs = this.parseAdditiveExpression();
+        return new BinaryOperatorExpression(this.popLoc(), instrLoc, e, 'in', rhs);
+      }
       default:
         return e;
     }
@@ -2870,8 +2907,14 @@ function checkLaws() {
     premises.forEach(e => e.checkAgainst(scope, booleanType));
     conclusion.checkAgainst(scope, booleanType);
     for (const x in scope.bindings) {
-      // If the type is an unbound inferred type, bind to list type...
-      (scope.bindings[x].value as Type).isListType();
+      // If the type is an unbound inferred type, bind to list type or int type, depending on whether used as operand of addition...
+      const type = (scope.bindings[x].value as Type).unwrapInferredType();
+      if (type instanceof InferredType) {
+        if (type.isAddable_)
+          type.isListType();
+        else
+          type.equals(intType);
+      }
     }
     const premisesParsed = premises.map(parseProofOutlineExpression).reduceRight((acc, t) => TermsCons(t, acc), TermsNil);
     laws[name] = new LawInfo(comment, name, Law(premisesParsed, parseProofOutlineExpression(conclusion)));
