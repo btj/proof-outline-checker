@@ -94,6 +94,9 @@ for (let operator of operatorsList) {
     operatorPrefixes[operator.substring(0, i)] = true;
 }
 
+const leftBrackets = {'(': true, '[': true, '{': true};
+const rightBrackets = {')': true, ']': true, '}': true};
+
 type LocFactory = (start: number, end: number) => Loc;
 
 class Comment_ {
@@ -234,9 +237,9 @@ class Scanner {
       throw new LocError(this.locFactory(this.tokenStart, this.tokenStart + 1), "Bad character");
     this.pos += longestOperatorFound.length - 1;
     this.eat();
-    if (longestOperatorFound in ['(', '[', '{'])
+    if (has(leftBrackets, longestOperatorFound))
       this.bracketsDepth++;
-    else if (longestOperatorFound in [')', ']', '}'])
+    else if (has(rightBrackets, longestOperatorFound))
       this.bracketsDepth--;
     return longestOperatorFound;
   }
@@ -3509,7 +3512,10 @@ def concat(xs, ys):
         oude_variant = len(todo)
         assert result + todo == xs + ys and todo != [] and len(todo) == oude_variant
         assert result + (todo[:1] + todo[1:]) == xs + ys and len(todo[1:]) < len(todo) == oude_variant # Herschrijven met Nonempty op 2 in 1 of LenSlice op 2
-        assert (result + todo[:1]) + todo[1:] == xs + ys and 0 <= len(todo[1:]) < oude_variant # Herschrijven met ConcatAssoc in 1 of LenNonneg of Herschrijven met 3 in 2
+        assert (
+          (result + todo[:1]) + todo[1:] == xs + ys
+          and 0 <= len(todo[1:]) < oude_variant
+        ) # Herschrijven met ConcatAssoc in 1 of LenNonneg of Herschrijven met 3 in 2
         result = result + todo[:1]
         assert result + todo[1:] == xs + ys and 0 <= len(todo[1:]) < oude_variant
         todo = todo[1:]
