@@ -3200,7 +3200,28 @@ function updateButtonStates() {
 type Example = {title: string, declarations: string, statements: string, expression: string};
 
 const examples: Example[] = [{
-  title: 'Copy a number (partial correctness)',
+  title: 'Kopieer een getal (partiële correctheid)',
+  declarations:
+`def copy(n):
+
+    # Het programma hieronder kopieert het gegeven getal n in variabele r.
+    # Voorzie het van een gepaste preconditie en postconditie en
+    # bewijs de partiële correctheid.
+
+    i = n
+    r = 0
+    while i != 0:
+        i = i - 1
+        r = r + 1
+
+    return r
+`,
+  statements:
+`assert copy(2) == 2
+assert copy(7) == 7`,
+  expression: `copy(3)`
+}, {
+  title: 'Kopieer een getal (partiële correctheid) (oplossing)',
   declarations:
 `def copy(n):
 
@@ -3229,7 +3250,30 @@ const examples: Example[] = [{
 assert copy(7) == 7`,
   expression: `copy(3)`
 }, {
-  title: 'Copy a number (alternative) (partial correctness)',
+  title: 'Kopieer een getal (alternatief)',
+  declarations:
+`# Wet LeAntisym: x <= y <= x ==> x == y
+
+def copy(n):
+
+    # Het programma hieronder kopieert de gegeven waarde n in de variabele r.
+    # Voorzie het van een gepaste preconditie en postconditie
+    # en bewijs de correctheid.
+
+    i = n
+    r = 0
+    while 0 < i:
+        i = i - 1
+        r = r + 1
+
+    return r
+`,
+  statements:
+`assert copy(2) == 2
+assert copy(7) == 7`,
+  expression: `copy(3)`
+}, {
+  title: 'Kopieer een getal (alternatief) (oplossing) (partiële correctheid)',
   declarations:
 `# Wet LeAntisym: x <= y <= x ==> x == y
 
@@ -3261,7 +3305,7 @@ def copy(n):
 assert copy(7) == 7`,
   expression: `copy(3)`
 }, {
-  title: 'Copy a number (total correctness)',
+  title: 'Kopieer een getal (oplossing) (totale correctheid)',
   declarations:
 `# Wet LeAntisym: x <= y and y <= x ==> x == y
 
@@ -3296,7 +3340,39 @@ def copy(n):
 assert copy(7) == 7`,
   expression: `copy(3)`
 }, {
-  title: 'Minimum of three',
+  title: 'Minimum van drie getallen',
+  declarations:
+`# Wet LeTrans: x <= y <= z ==> x <= z
+
+def min(x, y, z):
+
+    # Het programma hieronder berekent in result het minimum van de getallen
+    # x, y en z. Voorzie het van een gepaste preconditie en postconditie
+    # en bewijs de correctheid.
+
+    if x <= y:
+        if x <= z:
+            result = x
+        else:
+            result = z
+    else:
+        if y <= z:
+            result = y
+        else:
+            result = z
+
+    return result
+`,
+  statements:
+`assert min(1, 2, 3) == 1
+assert min(1, 3, 2) == 1
+assert min(2, 1, 3) == 1
+assert min(2, 3, 1) == 1
+assert min(3, 1, 2) == 1
+assert min(3, 2, 1) == 1`,
+  expression: `min(30, 20, 10)`
+}, {
+  title: 'Minimum van drie getallen (oplossing met zwakke postconditie)',
   declarations:
 `# Wet LeTrans: x <= y <= z ==> x <= z
 
@@ -3346,7 +3422,53 @@ assert min(3, 1, 2) == 1
 assert min(3, 2, 1) == 1`,
   expression: `min(30, 20, 10)`
 }, {
-  title: 'Minimum of three (using min function)',
+  title: 'Minimum van drie getallen (met min-functie)',
+  declarations:
+`def min(x, y, z):
+    if x <= y and x <= z:
+        return x
+    elif y <= x and y <= z:
+        return y
+    elif z <= x and z <= y:
+        return z
+
+# Wet min3_1: x <= y and x <= z ==> min(x, y, z) == x
+# Wet min3_2: y <= x and y <= z ==> min(x, y, z) == y
+# Wet min3_3: z <= x and z <= y ==> min(x, y, z) == z
+# Wet LeTrans: x <= y and y <= z ==> x <= z
+
+def my_min(x, y, z):
+
+    # Het programma hieronder berekent in result het minimum van
+    # de drie gegeven getallen x, y en z.
+    # Voorzie het van een gepaste preconditie en
+    # postconditie en bewijs de correctheid.
+    # Je mag in je toestandsbeweringen gebruik maken
+    # van de bovenstaande functie 'min'.
+
+    if x <= y:
+        if x <= z:
+            result = x
+        else:
+            result = z
+    else:
+        if y <= z:
+            result = y
+        else:
+            result = z
+
+    return result
+`,
+  statements:
+`assert my_min(1, 2, 3) == 1
+assert my_min(1, 3, 2) == 1
+assert my_min(2, 1, 3) == 1
+assert my_min(2, 3, 1) == 1
+assert my_min(3, 1, 2) == 1
+assert my_min(3, 2, 1) == 1`,
+  expression: `my_min(30, 20, 10)`
+}, {
+  title: 'Minimum van drie getallen (met min-functie) (oplossing)',
   declarations:
 `def min(x, y, z):
     if x <= y and x <= z:
@@ -3410,7 +3532,7 @@ assert my_min(3, 1, 2) == 1
 assert my_min(3, 2, 1) == 1`,
   expression: `my_min(30, 20, 10)`
 }, {
-  title: 'List full of ones',
+  title: 'Lijst vol eenen',
   declarations:
 `def repeat(n, xs):
     if n == 0:
@@ -3424,7 +3546,42 @@ assert my_min(3, 2, 1) == 1`,
 
 def ones(n):
 
-    # Exam MI 4/6/21
+    # Examen MI 4/6/21
+
+    # Het programma hieronder bouwt in res een lijst bestaande uit
+    # n voorkomens van het getal één.
+    # Voorzie het van een gepaste preconditie en postconditie
+    # en bewijs de correctheid.
+    # Je mag in je toestandsbeweringen gebruik maken van de
+    # bovenstaande functie 'repeat', die de aaneenschakeling
+    # van n exemplaren van de lijst xs teruggeeft.
+
+    i = n
+    res = []
+    while 0 < i:
+        res = res + [1]
+        i = i - 1
+
+    return res
+`,
+  statements:
+`assert ones(2) == [1, 1]
+assert ones(3) == [1, 1, 1]`,
+  expression: `ones(4)`
+}, {
+  title: 'Lijst vol eenen (oplossing) (partiële correctheid)',
+  declarations:
+`def repeat(n, xs):
+    if n == 0:
+        return []
+    else:
+        return repeat(n - 1, xs) + xs
+
+# Wet LeAntisym: x <= y <= z ==> x == y
+# Wet RepeatZero: repeat(0, xs) == []
+# Wet RepeatPlusOne: 0 <= n ==> repeat(n + 1, xs) == repeat(n, xs) + xs
+
+def ones(n):
 
     assert 0 <= n # PRECONDITION PARTIAL CORRECTNESS
 
@@ -3458,13 +3615,38 @@ def ones(n):
 assert ones(3) == [1, 1, 1]`,
   expression: `ones(4)`
 }, {
-  title: 'Length of list',
+  title: 'Lengte van een lijst',
   declarations:
 `# Wet LenNonneg: 0 <= len(xs)
 # Wet LenEmpty: len([]) == 0
 # Wet LenNonempty: xs != [] ==> len(xs) == 1 + len(xs[:-1])
 
-# Exam MI 18/6/21
+# Examen MI 18/6/21
+
+def length(xs):
+
+    # Het programma hieronder berekent in res de lengte van de gegeven
+    # niet-lege lijst xs.
+    # Voorzie het van een gepaste preconditie en postconditie
+    # en bewijs de correctheid.
+
+    todo = xs[:-1]
+    res = 1
+    while todo != []:
+        res = res + 1
+        todo = todo[:-1]
+
+    return res`,
+  statements:
+`assert length([1, 2, 3]) == 3
+assert length([4, 3, 2, 1]) == 4`,
+  expression: `length([10])`
+}, {
+  title: 'Lengte van een lijst (oplossing) (partiële correctheid)',
+  declarations:
+`# Wet LenNonneg: 0 <= len(xs)
+# Wet LenEmpty: len([]) == 0
+# Wet LenNonempty: xs != [] ==> len(xs) == 1 + len(xs[:-1])
 
 def length(xs):
 
@@ -3494,13 +3676,38 @@ def length(xs):
 assert length([4, 3, 2, 1]) == 4`,
   expression: `length([10])`
 }, {
-  title: 'Concatenation (partial correctness)',
+  title: 'Aaneenschakeling',
   declarations:
 `# Wet Nonempty: xs != [] ==> xs == xs[:1] + xs[1:]
 # Wet ConcatAssoc: xs + (ys + zs) == (xs + ys) + zs
 # Wet ConcatEmpty: xs + [] == xs
 
-# Exam MI 11/8/21
+# Examen MI 11/8/21
+
+def concat(xs, ys):
+
+    # Het programma hieronder berekent in variabele 'result' de aaneenschakeling
+    # van de gegeven lijst 'xs' en de gegeven niet-lege lijst 'ys'.
+    # Voorzie het van een gepaste preconditie en postconditie
+    # en bewijs de correctheid.
+
+    result = xs + ys[:1]
+    todo = ys[1:]
+    while todo != []:
+        result = result + todo[:1]
+        todo = todo[1:]
+
+    return result`,
+  statements:
+`assert concat([1, 2, 3], [4, 5]) == [1, 2, 3, 4, 5]
+assert concat([], [10]) == [10]`,
+  expression: `concat([100, 200], [300, 400])`
+}, {
+  title: 'Aaneenschakeling (oplossing, partiële correctheid)',
+  declarations:
+`# Wet Nonempty: xs != [] ==> xs == xs[:1] + xs[1:]
+# Wet ConcatAssoc: xs + (ys + zs) == (xs + ys) + zs
+# Wet ConcatEmpty: xs + [] == xs
 
 def concat(xs, ys):
 
@@ -3531,15 +3738,13 @@ def concat(xs, ys):
 assert concat([], [10]) == [10]`,
   expression: `concat([100, 200], [300, 400])`
 }, {
-  title: 'Concatenation (total correctness)',
+  title: 'Aaneenschakeling (oplossing, totale correctheid)',
   declarations:
 `# Wet Nonempty: xs != [] ==> xs == xs[:1] + xs[1:]
 # Wet ConcatAssoc: xs + (ys + zs) == (xs + ys) + zs
 # Wet ConcatEmpty: xs + [] == xs
 # Wet LenNonneg: 0 <= len(xs)
 # Wet LenSlice: xs != [] ==> len(xs[1:]) < len(xs)
-
-# Exam MI 11/8/21
 
 def concat(xs, ys):
 
@@ -3574,7 +3779,47 @@ def concat(xs, ys):
 assert concat([], [10]) == [10]`,
   expression: `concat([100, 200], [300, 400])`
 }, {
-  title: 'Number of zeros',
+  title: 'Aantal nullen',
+  declarations:
+`def nb_zeros(xs):
+    if xs == []:
+        return 0
+    elif xs[0] == 0:
+        return 1 + nb_zeros(xs[1:])
+    else:
+        return 0 + nb_zeros(xs[1:])
+
+# Wet LeAntisym: a <= b <= a ==> a == b
+# Wet LenNonnegative: 0 <= len(xs)
+# Wet SliceFull: xs[:] == xs
+# Wet NbZerosEmpty: nb_zeros(xs[i:i]) == 0
+# Wet NbZerosZero: 0 <= i and i < len(xs) and xs[i] == 0 ==> nb_zeros(xs[:i + 1]) == nb_zeros(xs[:i]) + 1
+# Wet NbZerosNonzero: 0 <= i and i < len(xs) and xs[i] != 0 ==> nb_zeros(xs[:i + 1]) == nb_zeros(xs[:i])
+
+def number_of_zeros(xs):
+
+    # Het programma hieronder berekent in n het aantal nullen in de gegeven lijst xs.
+    # Voorzie het van een gepaste preconditie en postconditie en
+    # bewijs de correctheid.
+    # Je mag in je correctheidsbeweringen gebruik maken van de bovenstaande
+    # functie 'nb_zeros', die het aantal nullen in de lijst xs teruggeeft.
+
+    i = 0
+    n = 0
+    while i < len(xs):
+        if xs[i] == 0:
+            n = n + 1
+        else:
+            pass
+        i = i + 1
+    
+    return n`,
+  statements:
+`assert number_of_zeros([1, 0, 2, 3, 0]) == 2
+assert number_of_zeros([0, 10, 0, 5, 3, 0, 7]) == 3`,
+  expression: `number_of_zeros([1, 2, 0, 3, 4]) == 1`
+}, {
+  title: 'Aantal nullen (oplossing, partiële correctheid)',
   declarations:
 `def nb_zeros(xs):
     if xs == []:
@@ -3629,7 +3874,47 @@ def number_of_zeros(xs):
 assert number_of_zeros([0, 10, 0, 5, 3, 0, 7]) == 3`,
   expression: `number_of_zeros([1, 2, 0, 3, 4]) == 1`
 }, {
-  title: 'Maximum of a list',
+  title: 'Maximum van een lijst getallen',
+  declarations:
+`def max(xs):
+    if len(xs) == 1:
+        return xs[0]
+    else:
+        m = max(xs[1:])
+        if xs[0] <= m:
+            return m
+        else:
+            return xs[0]
+
+# Wet MaxFirst: 1 <= len(xs) ==> max(xs[:1]) == xs[0]
+# Wet MaxGreater: 1 <= i + 1 <= len(xs) and max(xs[:i]) < xs[i] ==> max(xs[:i + 1]) == xs[i]
+# Wet MaxNotGreater: 1 <= i + 1 <= len(xs) and not max(xs[:i]) < xs[i] ==> max(xs[:i + 1]) == max(xs[:i])
+# Wet LeAntisym: x <= y <= x ==> x == y
+# Wet SliceFull: xs[:] == xs
+
+def maximum(xs):
+
+    # Het programma hieronder berekent in res het maximum van de elementen van de gegeven niet-lege lijst xs.
+    # Voorzie het van een gepaste preconditie en postconditie en bewijs de correctheid.
+    # Je mag in je correctheidsbeweringen gebruik maken van de bovenstaande functie 'max', die
+    # het maximum van de elementen van de gegeven lijst 'xs' teruggeeft.
+
+    res = xs[0]
+    i = 1
+    while i < len(xs):
+        if res < xs[i]:
+            res = xs[i]
+        else:
+            pass
+        i = i + 1
+
+    return res`,
+  statements:
+`assert maximum([3, 1, 4, 2]) == 4
+assert maximum([8]) == 8`,
+  expression: `maximum([-3, -2])`
+}, {
+  title: 'Maximum van een lijst getallen (oplossing, partiële correctheid)',
   declarations:
 `def max(xs):
     if len(xs) == 1:
@@ -3682,58 +3967,280 @@ def maximum(xs):
 `assert maximum([3, 1, 4, 2]) == 4
 assert maximum([8]) == 8`,
   expression: `maximum([-3, -2])`
-}, {
-  title: 'Faculty',
-  declarations:
-`# precondition: x is positive
-def fac(x):
-    if x == 1:
+},{
+title: 'Faculteit',
+declarations:
+`def fac(n):
+    if n == 0:
         return 1
     else:
-        return x * fac(x - 1)
+        return n * fac(n - 1)
+
+# Wet LeAntisym: x <= y <= x ==> x == y
+# Wet Fac0: fac(0) == 1
+# Wet FacPlusOne: 0 <= n ==> fac(n + 1) == (n + 1) * fac(n)
+
+def factorial(n):
+
+    # Het programma hieronder berekent in de variabele 'res' de faculteit
+    # van het gegeven getal 'n'.
+    # Voorzie het van een gepaste preconditie en postconditie
+    # en bewijs de correctheid.
+    # Je mag in je correctheidsbeweringen gebruik maken van
+    # de bovenstaande functie 'fac', die hetzelfde resultaat
+    # berekent, maar dan recursief in plaats van iteratief.
+
+    res = 1
+    i = 0
+    while i < n:
+        i = i + 1
+        res = i * res
+
+    return res
 `,
-  statements:
-`assert fac(2) == 2
-assert fac(4) == 24`,
-  expression: `fac(3)`
-}, {
-  title: 'Find an element in a list',
-  declarations:
-`#def find(haystack, needle):
-#    index = 0
-#    while True:
-#        if index == len(haystack):
-#            return -1
-#        if haystack[index] == needle:
-#            return index
-#        index += 1
+statements:
+`assert factorial(3) == 6
+assert factorial(0) == 1`,
+expression: `factorial(4)`
+},{
+title: 'Som van kwadraten',
+declarations:
+`def som_kwadraten(n):
+    if n == 0:
+        return 0
+    else:
+        return n * n + som_kwadraten(n - 1)
+
+# Wet LeAntisym: x <= y <= x ==> x == y
+# Wet SomKwadraten0: som_kwadraten(0) == 0
+# Wet SomKwadratenPlusOne: 0 <= n ==> som_kwadraten(n + 1) == (n + 1) * (n + 1) + som_kwadraten(n)
+
+def som_van_kwadraten(n):
+
+    # Het programma hieronder berekent in de variabele 'res' de som van
+    # de kwadraten van de getallen tussen 0 en 'n'.
+    # Voorzie het van een gepaste preconditie en postconditie
+    # en bewijs de correctheid.
+    # Je mag in je correctheidsbeweringen gebruik maken van
+    # de bovenstaande functie 'som_kwadraten', die hetzelfde
+    # resultaat teruggeeft, maar dan recursief berekend in
+    # plaats van iteratief.
+
+    res = 0
+    i = 0
+    while i < n:
+        i = i + 1
+        res = i * i + res
+
+    return res
 `,
-  statements:
-`#numbers = [3, 13, 7, 2]
-#assert find(numbers, 13) == 1
-#assert find(numbers, 8) == -1`,
-  expression: '' //'find(numbers, 7)'
-}, {
-  title: 'Bubblesort',
-  declarations:
-`#def bubblesort(list):
-#    todo = len(list)
-#    while todo > 1:
-#        index = 1
-#        while index < todo:
-#            if list[index - 1] > list[index]:
-#                tmp = list[index - 1]
-#                list[index - 1] = list[index]
-#                list[index] = tmp
-#            index += 1
-#        todo -= 1
+statements:
+`assert som_kwadraten(3) == 14
+assert som_kwadraten(0) == 0`,
+expression: `som_kwadraten(4) == 30`
+},{
+title: 'Som van oneven getallen',
+declarations:
+`def even(i):
+    if i < 0:
+        return even(-i)
+    elif i == 0:
+        return True
+    elif i == 1:
+        return False
+    else:
+        return even(i - 2)
+
+def som_oneven(n):
+    if n <= 0:
+        return 0
+    else:
+        if even(n):
+            return som_oneven(n - 1)
+        else:
+            return n + som_oneven(n - 1)
+
+# Wet LeAntisym: x <= y <= x ==> x == y
+# Wet Le20NotEven: i <= 20 and not even(i) ==> i <= 19
+# Wet NotEven1: not even(1)
+# Wet NotEvenPlus2: not even(i) ==> not even(i + 2)
+# Wet SomOneven0: som_oneven(0) == 0
+# Wet SomOnevenPlusTwo: 1 <= i and not even(i) ==> som_oneven(i + 1) == som_oneven(i - 1) + i
+
+def som_van_oneven():
+
+    # Het programma hieronder berekent de som van de oneven getallen tussen
+    # 0 en 20.
+    # Voorzie het van een gepaste preconditie en postconditie
+    # en bewijs de correctheid.
+    # Je mag in je correctheidsbeweringen gebruik maken van
+    # de bovenstaande functies 'som_oneven' en 'even'.
+
+    i = 1
+    som = 0
+    while i <= 20:
+        som = som + i
+        i = i + 2
+
+    return som
 `,
-  statements:
-`#numbers1 = [40, 10, 30, 20]
-#numbers2 = numbers1
-#numbers3 = [40, 10, 30, 20]
-#bubblesort(numbers1)`,
-  expression: ''
+statements:
+`assert som_van_oneven() == 19 + 17 + 15 + 13 + 11 + 9 + 7 + 5 + 3 + 1`,
+expression: `som_van_oneven()`
+},{
+title: 'Kleinst gemeen veelvoud',
+declarations:
+`def ggd(a, b):
+    if a == 0:
+        return b
+    elif b == 0:
+        return a
+    elif a < b:
+        return ggd(a, b - a)
+    else:
+        return ggd(a - b, b)
+
+# Wet LeAntisym: x <= y <= x ==> x == y
+# Wet GgdZero: 0 <= x ==> ggd(x, 0) == x
+# Wet GgdCommut: 0 <= x and 0 <= y ==> ggd(x, y) == ggd(y, x)
+# Wet GgdMinus: 0 <= a <= b ==> ggd(b, a) == ggd(b - a, a)
+
+def grootste_gemene_deler(a, b):
+
+    # Het programma hieronder berekent in x de grootste gemene deler van
+    # de gegeven niet-negatieve getallen a en b.
+    # (We stellen de grootste gemene deler van nul en nul gelijk
+    # aan nul.)
+    # Voorzie het van een gepaste preconditie en postconditie
+    # en bewijs de correctheid.
+    # Je mag in je correctheidsbeweringen gebruik maken van de
+    # bovenstaande functie 'ggd'.
+
+    if a < b:
+        x = b
+        y = a
+    else:
+        x = a
+        y = b
+    while 0 < y:
+        x = x - y
+        if x < y:
+            tmp = x
+            x = y
+            y = tmp
+        else:
+            pass
+
+    return x
+
+def kleinst_gemeen_veelvoud(a, b):
+    return a * b / ggd(a, b)
+`,
+statements:
+`assert kleinst_gemeen_veelvoud(15, 20) == 60`,
+expression: `kleinst_gemeen_veelvoud(6, 10)`
+},{
+title: 'Dubbele voorkomens',
+declarations:
+`def nodup(xs):
+    if xs == []:
+        return []
+    res0 = nodup(xs[:-1])
+    if xs[-1] in res0:
+        return res0
+    else:
+        return res0 + [xs[-1]]
+
+# Wet LeAntisym: x <= y <= x ==> x == y
+# Wet LenNonneg: 0 <= len(xs)
+# Wet SliceEmpty: xs[:0] == []
+# Wet SliceFull: xs[:] == xs
+# Wet NoDupEmpty: nodup([]) == []
+# Wet NoDupNotIn: 0 <= i < len(xs) and xs[i] not in nodup(xs[:i]) ==> nodup(xs[:i + 1]) == nodup(xs[:i]) + [xs[i]]
+# Wet NoDupIn: 0 <= i < len(xs) and xs[i] in nodup(xs[:i]) ==> nodup(xs[:i + 1]) == nodup(xs[:i])
+# Wet InEmpty: (x in []) == False
+# Wet InEq: 0 <= i < len(xs) and x == xs[i] ==> (x in xs[:i + 1]) == True
+# Wet InNotEq: 0 <= i < len(xs) and x != xs[i] ==> (x in xs[:i + 1]) == (x in xs[:i])
+
+def zonder_dubbele_voorkomens(xs):
+
+    # Het programma hieronder berekent in de variabele 'res' een versie
+    # van de gegeven lijst 'xs' waaruit de eventuele herhaalde
+    # voorkomens van elk element verwijderd zijn.
+    # Voorzie het van een gepaste preconditie en postconditie
+    # en bewijs de correctheid.
+    # Je mag in je correctheidsbeweringen gebruik maken van de
+    # bovenstaande functie 'nodup', die hetzelfde resultaat
+    # berekent, maar dan op een minder efficiënte manier.
+
+    res = []
+    i = 0
+    while i < len(xs):
+        is_dubbel = False
+        j = 0
+        while j < len(res):
+            if res[j] == xs[i]:
+                is_dubbel = True
+            else:
+                pass
+            j = j + 1
+        if not is_dubbel:
+            res = res + [xs[i]] # res.append(xs[i])
+        else:
+            pass
+        i = i + 1
+
+    return res
+    
+`,
+statements:
+`assert zonder_dubbele_voorkomens([10, 20, 30, 20, 40, 10, 50]) == [10, 20, 30, 40, 50]`,
+expression: `zonder_dubbele_voorkomens([80, 60, 30, 60, 80, 10])`
+},{
+title: 'Fibonacci',
+declarations:
+`def fib(n):
+    if n == 0:
+        return 0
+    elif n == 1:
+        return 1
+    else:
+        return fib(n - 2) + fib(n - 1)
+
+# Wet LeAntisym: x <= y <= x ==> x == y
+# Wet Fib0: fib(0) == 0
+# Wet Fib1: fib(1) == 1
+# Wet FibPlusTwo: 0 <= i ==> fib(i + 2) == fib(i) + fib(i + 1)
+
+def fibonacci(n):
+
+    # Het programma hieronder berekent in variabele 'curr' het n-de
+    # Fibonacci-getal.
+    # Voorzie het van een gepaste preconditie en postconditie
+    # en bewijs de correctheid.
+    # Je mag in je correctheidsbeweringen gebruik maken van de
+    # bovenstaande functie 'fib', die dezelfde uitkomst
+    # berekent (maar op een minder efficiënte manier).
+
+    prev = 1
+    curr = 0
+    i = 0
+    while i < n:
+        i = i + 1
+        next = prev + curr
+        prev = curr
+        curr = next
+    
+    return curr
+
+`,
+statements:
+`assert fibonacci(2) == 1
+assert fibonacci(3) == 2
+assert fibonacci(4) == 3
+assert fibonacci(5) == 5
+assert fibonacci(6) == 8`,
+expression: `fibonacci(7)`
 }
 ]
 
