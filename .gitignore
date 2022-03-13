@@ -20,3 +20,4 @@ node_modules
 pylearner.js
 secretExamples.js
 secret
+.DS_Store

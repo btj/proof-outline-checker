@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>PyLearner</title>
+    <title>Bewijssilhouettencontroleur</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.2/lib/codemirror.css">
     <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.2/lib/codemirror.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.2/addon/edit/matchbrackets.js"></script>
@@ -32,29 +32,29 @@
     </style>
   </head>
   <body style="background: lightgray">
-    <table width="100%"><tr><td width="*1"><h1>PyLearner</h1></td><td style="text-align: center">Examples: <select id="examples"></select></td><td style="text-align: right"><a href="exercises.html">Exercises</a></td></tr></table>
+    <table width="100%"><tr><td width="*1"><h1>Bewijssilhouettencontroleur</h1></td><td style="text-align: center">Voorbeelden: <select id="examples"></select></td><td style="text-align: right"><a href="doc.html">Documentatie</a></td></tr></table>
     <table width="100%" style="table-layout: fixed"><tr>
     <td width="50%" style="vertical-align: top">
-      <p><b>Declarations:</b>
-        <button id="checkProofOutlinesButton" onClick="checkProofOutlines()">Check proof outlines</button></p>
+      <p><b>Declaraties:</b>
+        <button id="checkProofOutlinesButton" onClick="checkProofOutlines()">Controleer de bewijssilhouetten</button></p>
       <p><textarea id="declarations"></textarea></p>
-      <p><b>Statements:</b>
-        <button id="executeButton" onClick="executeStatements(false)">Execute (Ctrl+Enter)</button>
-        <button id="resetAndExecuteButton" onClick="resetAndExecute()">Reset machine and execute (Shift+Ctrl+Enter)</button>
-        <button id="stepThroughStatementsButton" onclick="executeStatements(true)">Step through</button></p>
+      <p><b>Opdrachten:</b>
+        <button id="executeButton" onClick="executeStatements(false)">Voer uit (Ctrl+Enter)</button>
+        <button id="resetAndExecuteButton" onClick="resetAndExecute()">Reset machine en voer uit (Shift+Ctrl+Enter)</button>
+        <button id="stepThroughStatementsButton" onclick="executeStatements(true)">Stap door</button></p>
       <p><textarea id="statements"></textarea></p>
-      <p><b>Expression:</b> <button id="evaluateButton" onClick="evaluateExpression()">Evaluate (Ctrl+Enter)</button> <button id="stepThroughExpressionButton" onclick="evaluateExpression(true)">Step through</button></p>
+      <p><b>Uitdrukking:</b> <button id="evaluateButton" onClick="evaluateExpression()">Evalueer (Ctrl+Enter)</button> <button id="stepThroughExpressionButton" onclick="evaluateExpression(true)">Stap door</button></p>
       <p><textarea id="expression"></textarea></p>
-      <p><b>Results:</b> <button onClick="resultsEditor.setValue('')">Clear</button></p>
+      <p><b>Uitkomsten:</b> <button onClick="resultsEditor.setValue('')">Wissen</button></p>
       <p><textarea id="results"></textarea></p>
     </td>
     <td id="machine" height="100%" style="vertical-align: top; padding-left: 20px">
       <p>
-        <button id="stepButton" onclick="step()" disabled>Step</button>
-        <button id="smallStepButton" onclick="smallStep()" disabled>Small step</button>
-        <button id="stepOverButton" onclick="stepOver()" disabled>Step over</button>
-        <button id="stepOutButton" onClick="stepOut()" disabled>Step out</button>
-        <button id="continueButton" onclick="continue_()" disabled>Continue</button>
+        <button id="stepButton" onclick="step()" disabled>Stap</button>
+        <button id="smallStepButton" onclick="smallStep()" disabled>Kleine stap</button>
+        <button id="stepOverButton" onclick="stepOver()" disabled>Stap over</button>
+        <button id="stepOutButton" onClick="stepOut()" disabled>Stap uit</button>
+        <button id="continueButton" onclick="continue_()" disabled>Voer verder uit</button>
         <button onclick="reset()">Reset (Ctrl+Esc)</button></p>
       <div style="position: relative; display: flex; flex-direction: row; align-items: stretch">
             <table id="callstack" style="background-color: lightgreen; border: 2px solid black; border-collapse: collapse">

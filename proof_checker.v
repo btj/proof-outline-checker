@@ -360,20 +360,35 @@ Fixpoint match_term f c C :=
   | _, _ => None
   end.
 
+Definition string_of_Z(k: Z): string :=
+  match k with
+    0%Z => "0"
+  | 1%Z => "1"
+  | 2%Z => "2"
+  | 3%Z => "3"
+  | 4%Z => "4"
+  | 5%Z => "5"
+  | 6%Z => "6"
+  | 7%Z => "7"
+  | 8%Z => "8"
+  | 9%Z => "9"
+  | _ => "?"
+  end.
+
 Fixpoint match_law_premises{A}(l: loc)(f: var -> option term)(Hs: list term)(ps: list term)(ks: list (loc * nat))(cont: (var -> option term) -> result A (loc * string)): result A (loc * string) :=
   match ps, ks with
     [], [] => cont f
   | p::ps, (lk, k)::ks =>
     match nth_error Hs k with
-    | None => Error (lk, "Conjunct index out of range")
+    | None => Error (lk, "Conjunctnummer ongeldig; het antecedent telt slechts " ++ string_of_Z (Z.of_nat (List.length Hs)) ++ " conjuncten")
     | Some H =>
       match match_term f p H with
-      | None => Error (lk, "Conjunct does not match corresponding law premise")
+      | None => Error (lk, "De vorm van deze conjunct komt niet overeen met de vorm van de overeenkomstige premisse van de wet")
       | Some f =>
         match_law_premises l f Hs ps ks cont
       end
     end
-  | _, _ => Error (l, "Number of conjunct indices does not match number of law premises")
+  | _, _ => Error (l, "Het aantal conjunctnummers is niet gelijk aan het aantal premissen van de wet")
   end.
 
 Definition law_application_checker_for(l: loc)(f: var -> option term)(Hs: list term)(ps: list term)(c: term)(ks: list (loc * nat)): result (term -> bool) (loc * string) :=
@@ -441,7 +456,7 @@ Definition conjunct_entailment_checker_for(Hs: list term)(j: justif): result (te
     JZ l => Ok is_Z_tautology
   | JZ_at l lk k =>
     match nth_error Hs k with
-      None => Error (lk, "Conjunct index out of range")
+      None => Error (lk, "Conjunctnummer ongeldig; het antecedent telt slechts " ++ string_of_Z (Z.of_nat (List.length Hs)) ++ " conjuncten")
     | Some H => Ok (is_Z_entailment H)
     end
   | JRewrite l lk1 k1 lk2 k2 =>
@@ -450,13 +465,13 @@ Definition conjunct_entailment_checker_for(Hs: list term)(j: justif): result (te
       match H with
       | BinOp leq (Eq _) LHS RHS =>
         match nth_error Hs k2 with
-          None => Error (lk2, "Conjunct index out of range")
+          None => Error (lk2, "Conjunctnummer ongeldig; het antecedent telt slechts " ++ string_of_Z (Z.of_nat (List.length Hs)) ++ " conjuncten")
         | Some H2 =>
           Ok (fun C => if existsb (term_equivb C) (rewrites LHS RHS H2) then true else false)
         end
-      | _ => Error (loc_of_term H, "Equality expected")
+      | _ => Error (loc_of_term H, "Gelijkheid verwacht")
       end
-    | _ => Error (lk1, "Conjunct index out of range")
+    | _ => Error (lk1, "Conjunctnummer ongeldig; het antecedent telt slechts " ++ string_of_Z (Z.of_nat (List.length Hs)) ++ " conjuncten")
     end
   | JLaw l (Law ps c) ks =>
     law_application_checker_for l (fun _ => None) Hs ps c ks
@@ -467,10 +482,10 @@ Definition conjunct_entailment_checker_for(Hs: list term)(j: justif): result (te
         match nth_error Hs k with
           Some H =>
           Ok (fun C => can_rewrite f lhs rhs H C)
-        | None => Error (lk, "Conjunct index out of range")
+        | None => Error (lk, "Conjunctnummer ongeldig; het antecedent telt slechts " ++ string_of_Z (Z.of_nat (List.length Hs)) ++ " conjuncten")
         end
       )
-    | _ => Error (l, "Conclusion of law is not an equality")
+    | _ => Error (l, "De conclusie van deze wet is geen gelijkheid")
     end
   end.
 
@@ -506,7 +521,7 @@ Definition check_conjunct_entailment(Hs: list term)(checkers: list (term -> bool
   then
     Ok tt
   else
-    Error (loc_of_term C, "Conjunct not justified").
+    Error (loc_of_term C, "Conjunct niet verantwoord").
 
 Definition check_entailment(P P': term)(js: list justif): result unit (loc * string) :=
   let Hs := conjuncts_of P in
@@ -569,72 +584,71 @@ Fixpoint check_proof_outline(total: bool)(s: stmt): result unit (loc * string) :
     if term_equivb P (subst x t Q) then
       check_proof_outline total s
     else
-      Error (laP, "Assignment precondition does not match postcondition with RHS substituted for LHS")
+      Error (lass, "Kan de correctheid van deze toekenning niet bewijzen; kan het toekenningsaxioma niet toepassen want de pre- en postconditie van de toekenning hebben niet de juiste vorm")
   | Assert laP P _ ;; If li C ((Assert laPthen Pthen _ ;; _) as thenBody) ((Assert laPelse Pelse _ ;; _) as elseBody) ;; (Assert laQ Q _ ;; _) as s =>
-    if negb (term_equivb' Pthen (BinOp li And P C)) then
-      Error (laPthen, "The precondition of the 'then' block of an 'if' statement must match the conjunction of the 'if' statement's precondition and the condition")
-    else if negb (ends_with_assert thenBody Q) then
-      Error (li, "The 'then' block of an 'if' statement must end with an assertion that asserts the 'if' statement's postcondition")
+    if negb (
+      term_equivb' Pthen (BinOp li And P C)
+      && ends_with_assert thenBody Q
+      && term_equivb' Pelse (BinOp li And P (Not li C))
+      && ends_with_assert elseBody Q
+    ) then
+      Error (li, "Kan de correctheid van deze 'if'-opdracht niet bewijzen; kan de regel voor 'if'-opdrachten niet toepassen want de pre- en postconditie van de 'if'-opdracht en van de beide takken hebben niet de juiste vorm")
     else
       match check_proof_outline total thenBody with
         Error e => Error e
       | Ok _ =>
-        if negb (term_equivb' Pelse (BinOp li And P (Not li C))) then
-          Error (laPelse, "The precondition of the 'else' block of an 'if' statement must match the conjunction of the 'if' statement's precondition and the negation of the condition")
-        else if negb (ends_with_assert elseBody Q) then
-          Error (li, "The 'else' block of an 'if' statement must end with an assertion that asserts the 'if' statement's postcondition")
-        else
-          check_proof_outline total elseBody
+        match check_proof_outline total elseBody with
+          Error e => Error e
+        | Ok _ =>
+          check_proof_outline total s
+        end
       end
   | Assert laInv Inv _ ;; While lw C body ;; ((Assert laQ Q _ ;; _) as s) =>
     if total then
       match body with
         Assign las ((_, TInt) as x) V ;; ((Assert laP P _ ;; body1) as body0) =>
         if existsb (var_eqb x) (free_vars Inv) then
-          Error (laInv, "Variable '" ++ fst x ++ "' must not appear in the loop invariant")
+          Error (laInv, "Variable '" ++ fst x ++ "' mag niet voorkomen in de lusinvariant")
         else if existsb (var_eqb x) (free_vars C) then
-          Error (lw, "Variable '" ++ fst x ++ "' must not appear in the loop condition")
+          Error (lw, "Variable '" ++ fst x ++ "' mag niet voorkomen in de lusvoorwaarde")
         else if existsb (var_eqb x) (assigned_vars body1) then
-          Error (loc_of_stmt body1, "Variable '" ++ fst x ++ "' must not be assigned to in the loop body")
-        else if negb (term_equivb' P (BinOp lw And Inv (BinOp lw And C (BinOp lw (Eq TInt) V (Var lw x))))) then
-          Error (laP, "Loop body precondition does not match conjunction of invariant, condition, and equality of variant and variable")
-        else if negb (ends_with_assert body1 (BinOp lw And Inv (BinOp lw And (BinOp lw Le (Val lw 0) V) (BinOp lw Le (BinOp lw Add V (Val lw 1)) (Var lw x))))) then
-          Error (loc_of_stmt body1, "Loop body does not end with an assert statement that asserts the conjunction of the loop invariant and that the variant is nonnegative and less than the variable")
+          Error (loc_of_stmt body1, "Aan variable '" ++ fst x ++ "' mag niet toegekend worden in het luslichaam")
+        else if negb (
+          term_equivb' P (BinOp lw And Inv (BinOp lw And C (BinOp lw (Eq TInt) V (Var lw x)))) &&
+          ends_with_assert body1 (BinOp lw And Inv (BinOp lw And (BinOp lw Le (Val lw 0) V) (BinOp lw Le (BinOp lw Add V (Val lw 1)) (Var lw x)))) &&
+          term_equivb' Q (BinOp lw And Inv (Not lw C))
+        ) then
+          Error (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de pre- en postconditie van de lus en van het luslichaam hebben niet de juiste vorm")
         else
           match check_proof_outline total body0 with
             Error e => Error e
           | Ok _ =>
-            if negb (term_equivb' Q (BinOp lw And Inv (Not lw C))) then
-              Error (laQ, "Loop postcondition does not match conjunction of invariant and negation of condition")
-            else
-              Ok tt
+            check_proof_outline total s
           end
-      | _ => Error (lw, "Body of loop must start with assignment followed by assertion")
+      | _ => Error (lw, "Het luslichaam moet beginnen met een toekenning gevolgd door een 'assert'-opdracht")
       end
     else
       match body with
         Assert laP P _ ;; _ =>
-        if term_equivb' P (BinOp laInv And Inv C) then
-          if ends_with_assert body Inv then
-            match check_proof_outline total body with
-              Ok _ =>
-              if term_equivb' Q (BinOp laInv And Inv (Not laInv C)) then
-                check_proof_outline total s
-              else
-                Error (laQ, "Loop postcondition does not match conjunction of invariant and negation of condition")
-            | Error e => Error e
-            end
-          else
-            Error (lw, "Body of loop does not end with an assert statement that asserts the loop invariant")
+        if negb (
+          term_equivb' P (BinOp laInv And Inv C)
+          && ends_with_assert body Inv
+          && term_equivb' Q (BinOp laInv And Inv (Not laInv C))
+        ) then
+          Error (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de pre- en postconditie van de lus en van het luslichaam hebben niet de juiste vorm")
         else
-          Error (laP, "Loop body precondition does not match conjunction of invariant and condition")
+          match check_proof_outline total body with
+            Ok _ =>
+            check_proof_outline total s
+          | Error e => Error e
+          end
       | _ =>
-        Error (loc_of_stmt body, "Body of loop must start with assert")
+        Error (loc_of_stmt body, "Luslichaam moet beginnen met een 'assert'-opdracht")
       end
   | Assert laP P _ ;; Pass lp ;; ((Assert laQ Q _ ;; _) as s) =>
     if negb (term_equivb P Q) then
-      Error (laP, "The precondition of a 'pass' statement must match its postcondition")
+      Error (laP, "De preconditie van een 'pass-opdracht moet gelijk zijn aan haar postconditie")
     else
       check_proof_outline total s
-  | Assert laP P _ ;; Pass lp => Ok tt  | _ => Error (loc_of_stmt s, "Malformed proof outline")
+  | Assert laP P _ ;; Pass lp => Ok tt  | _ => Error (loc_of_stmt s, "Bewijssilhouet heeft een foute vorm")
   end.

@@ -135,7 +135,7 @@ class Scanner {
 
   eat() {
     this.pos++;
-    this.c = (this.pos == this.text.length ? "<EOF>" : this.text.charAt(this.pos));
+    this.c = (this.pos == this.text.length ? '<EINDE>' : this.text.charAt(this.pos));
   }
 
   nextToken() {
@@ -156,7 +156,7 @@ class Scanner {
         case '#':
           this.eat();
           const commentStart = this.pos;
-          while (this.c != '<EOF>' && this.c != '\n' && this.c != '\r')
+          while (this.c != '<EINDE>' && this.c != '\n' && this.c != '\r')
             this.eat();
           const comment = new Comment_(this.locFactory, commentStart, this.text.slice(commentStart, this.pos), this.onNewLine);
           if (this.commentListener)
@@ -169,26 +169,26 @@ class Scanner {
       }
     }
     this.tokenStart = this.pos;
-    if (this.c == '<EOF>') {
+    if (this.c == '<EINDE>') {
       if (this.bracketsDepth > 0)
-        return "EOF"; // Parser will detect error
+        return 'EINDE'; // Parser will detect error
       if (!this.emittedEOL) {
         this.emittedEOL = true;
         this.value = this.comment;
-        return "EOL";
+        return 'REGELEINDE';
       }
       if (this.currentIndent() != '') {
         this.indentStack.pop();
         return "DEDENT";
       }
-      return 'EOF';
+      return 'EINDE';
     }
     if (this.onNewLine) {
       if (this.bracketsDepth == 0) {
         if (!this.emittedEOL) {
           this.emittedEOL = true;
           this.value = this.comment;
-          return "EOL";
+          return 'REGELEINDE';
         }
         let indent = this.text.substring(this.startOfLine, this.tokenStart);
         if (indent == this.currentIndent()) {
@@ -199,7 +199,7 @@ class Scanner {
           this.indentStack.pop();
           return "DEDENT";
         } else
-          throw new LocError(this.locFactory(this.tokenStart, this.tokenStart + 1), "Bad indentation");
+          throw new LocError(this.locFactory(this.tokenStart, this.tokenStart + 1), "Foute indentatie");
       }
     }
     this.onNewLine = false;
@@ -209,7 +209,7 @@ class Scanner {
       while (isDigit(this.c))
         this.eat();
       this.value = this.text.substring(this.tokenStart, this.pos);
-      return "NUMBER";
+      return 'GETAL';
     }
     if (isAlpha(this.c)) {
       let c0 = this.c;
@@ -219,7 +219,7 @@ class Scanner {
       this.value = this.text.substring(this.tokenStart, this.pos);
       if (has(keywords, this.value))
         return this.value;
-      return "IDENT";
+      return 'NAAM';
     }
     
     let newPos = this.pos + 1;
@@ -234,7 +234,7 @@ class Scanner {
         break;
     }
     if (longestOperatorFound === null)
-      throw new LocError(this.locFactory(this.tokenStart, this.tokenStart + 1), "Bad character");
+      throw new LocError(this.locFactory(this.tokenStart, this.tokenStart + 1), "Fout teken");
     this.pos += longestOperatorFound.length - 1;
     this.eat();
     if (has(leftBrackets, longestOperatorFound))
@@ -309,7 +309,7 @@ class Scope {
         const decl = new ImplicitVariableDeclaration(x, type);
         result = this.bindings[x] = new LocalBinding(decl, type);
       } else
-        throw new ExecutionError(loc, "No such variable in scope: " + x);
+        throw new ExecutionError(loc, "Er bestaat hier geen variabele genaamd '" + x + "'");
     return result;
   }
   
@@ -370,11 +370,11 @@ abstract class Expression extends ASTNode {
     if (targetType instanceof ReferenceType && t == nullType)
       return;
     if (!targetType.equals(t))
-      this.executionError("Expression has type " + t + ", but an expression of type " + targetType + " was expected");
+      this.executionError("Deze uitdrukking heeft type " + t + ", maar hier wordt een uitdrukking met type " + targetType + " verwacht");
   }
   
   async evaluateBinding(env: Scope, allowReadOnly?: boolean): Promise<(pop?: (nbOperands: number) => Value[]) => any> {
-    this.executionError("This expression cannot appear on the left-hand side of an assignment");
+    this.executionError("Deze uitdrukking mag niet aan de linkerkant van een toekenning voorkomen");
   }
 
   push(value: Value) {
@@ -445,7 +445,7 @@ class UnaryOperatorExpression extends Expression {
         this.operand.checkAgainst(env, booleanType);
         return booleanType;
       default:
-        this.executionError("Operator not supported");
+        this.executionError("Bewerkingsteken niet ondersteund");
     }
   }
 
@@ -453,7 +453,7 @@ class UnaryOperatorExpression extends Expression {
     switch (this.operator) {
       case 'not': return !v;
       default:
-        this.executionError("Operator not supported");
+        this.executionError("Bewerkingsteken niet ondersteund");
     }
   }
 
@@ -476,14 +476,14 @@ class BinaryOperatorExpression extends Expression {
       case '+':
         const lhsType = this.leftOperand.check_(env);
         if (!lhsType.isAddable())
-          this.executionError("The left-hand operand does not support addition");
+          this.executionError("De linker operand ondersteunt geen optelling");
         this.rightOperand.checkAgainst(env, lhsType);
         return lhsType;
       case 'in':
         const rhsType = this.rightOperand.check_(env).unwrapInferredType();
         rhsType.isListType(); // Force list type if not yet inferred
         if (!(rhsType instanceof ListType))
-          return this.executionError("The right-hand operand is not a list");
+          return this.executionError("De rechter operand is geen lijst");
         this.leftOperand.checkAgainst(env, rhsType.elementType);
         return booleanType;
       case '-':
@@ -517,7 +517,7 @@ class BinaryOperatorExpression extends Expression {
         this.rightOperand.checkAgainst(env, lt);
         return booleanType;
       default:
-        this.executionError("Operator not supported");
+        this.executionError("Bewerkingsteken niet ondersteund");
     }
   }
 
@@ -528,10 +528,10 @@ class BinaryOperatorExpression extends Expression {
           return v1.plus(v2);
         if (typeof v1 == 'number' && typeof v2 == 'number')
           return (v1 + v2)|0;
-        this.executionError("Bad operands");
+        this.executionError("Foute operanden");
       case 'in':
         if (!(v2 instanceof ListObject))
-          return this.executionError("Right-hand operand is not a list");
+          return this.executionError("Rechter operand is geen lijst");
         return v2.getElements().some(e => valueEquals(e, v1));
       case '-': return (v1 - v2)|0;
       case '*': return (v1 * v2)|0;
@@ -551,7 +551,7 @@ class BinaryOperatorExpression extends Expression {
       case '<=': return v1 <= v2;
       case '>': return v1 > v2;
       case '>=': return v1 >= v2;
-      default: this.executionError("Operator '" + this.operator + "' not supported.");
+      default: this.executionError("Bewerkingsteken '" + this.operator + "' niet ondersteund.");
     }
   }
   
@@ -644,7 +644,7 @@ class AssignmentExpression extends Expression {
       case '>>>=': return lhs >>> rhs;
       case '<<=': return lhs << rhs;
       default:
-        this.executionError("Operator not supported");
+        this.executionError("Bewerkingsteken niet ondersteund");
     }
   }
   
@@ -906,14 +906,14 @@ class NewExpression extends Expression {
 
   check(env: Scope) {
     if (!has(classes, this.className))
-      this.executionError("No such class: " + this.className);
+      this.executionError("Er is geen klasse genaamd " + this.className);
     return classes[this.className].type;
   }
   
   async evaluate(env: Scope) {
     await this.breakpoint();
     if (!has(classes, this.className))
-      this.executionError("No such class: " + this.className);
+      this.executionError("Er is geen klasse genaamd " + this.className);
     this.push(new JavaClassObject(classes[this.className]));
   }
 }
@@ -934,7 +934,7 @@ class NewArrayExpression extends Expression {
     await this.breakpoint();
     let [length] = pop(1);
     if (length < 0)
-      this.executionError("Negative array length");
+      this.executionError("Negatieve lengte");
     this.elementType.resolve();
     this.push(new ListObject(this.elementType.type!, Array(length).fill(this.elementType.type!.defaultValue())));
   }
@@ -975,13 +975,13 @@ class SelectExpression extends Expression {
     let targetType = this.target.check_(env);
     if (targetType instanceof ListType) {
       if (this.selector != "length")
-        this.executionError("Arrays do not have a field named '" + this.selector + "'");
+        this.executionError("Lijsten hebben geen veld genaamd '" + this.selector + "'");
       return intType;
     }
     if (!(targetType instanceof ClassType))
-      this.executionError("Target expression must be of class type");
+      this.executionError("Doel-uitdrukking moet van klassetype zijn");
     if (!has(targetType.class_.fields, this.selector))
-      this.executionError("Class " + targetType.class_.name + " does not have a field named '" + this.selector + "'");
+      this.executionError("Klasse " + targetType.class_.name + " heeft geen veld genaamd '" + this.selector + "'");
     return targetType.class_.fields[this.selector].type.type!;
   }
   
@@ -991,15 +991,15 @@ class SelectExpression extends Expression {
       let [target] = pop!(1);
       if (target instanceof ListObject) {
         if (this.selector != "length")
-          this.executionError(target + " does not have a field named '" + this.selector + "'");
+          this.executionError(target + " heeft geen veld genaamd '" + this.selector + "'");
         if (allowReadOnly !== true)
-          this.executionError("Cannot modify an array's length");
+          this.executionError("Je kan de lengte van een lijst niet aanpassen");
         return new ReadOnlyBinding(target.length);
       }
       if (!(target instanceof JavaObject))
-        this.executionError(target + " is not an object");
+        this.executionError(target + " is geen object");
       if (!has(target.fields, this.selector))
-        this.executionError("Target does not have a field named " + this.selector);
+        this.executionError("Doelobject heeft geen veld genaamd " + this.selector);
       return target.fields[this.selector];
     }
   }
@@ -1019,7 +1019,7 @@ class SubscriptExpression extends Expression {
   check(env: Scope) {
     let targetType = this.target.check_(env);
     if (!(targetType.isListType()))
-      this.executionError("Target of subscript expression must be a list");
+      this.executionError("Het doel van een element-uitdrukking moet een lijst zijn");
     this.index.checkAgainst(env, intType);
     return (targetType.unwrapInferredType() as ListType).elementType;
   }
@@ -1030,13 +1030,13 @@ class SubscriptExpression extends Expression {
     return (pop?: (nbOperands: number) => Value[]) => {
       let [target, index] = pop!(2);
       if (!(target instanceof ListObject))
-        this.executionError(target + " is not a list");
+        this.executionError(target + " is geen lijst");
       if (index < 0)
         index += target.length;
       if (index < 0)
-        this.executionError("Negative list index " + index);
+        this.executionError("Negative lijst-index " + index);
       if (target.length <= index)
-        this.executionError("List index " + index + " not less than list length " + target.length);
+        this.executionError("Lijst-index " + index + " is niet kleiner dan de lengte " + target.length + " van de lijst");
       return target.fields[index];
     }
   }
@@ -1056,7 +1056,7 @@ class LenExpression extends Expression {
   check(env: Scope) {
     let targetType = this.target.check_(env);
     if (!targetType.isListType())
-      this.executionError("Argument of 'len' must be a list");
+      this.executionError("Argument van 'len moet een lijst zijn");
     return intType;
   }
 
@@ -1064,7 +1064,7 @@ class LenExpression extends Expression {
     await this.target.evaluate(env);
     let [target] = pop(1);
     if (!(target instanceof ListObject))
-      this.executionError(target + ' is not a list');
+      this.executionError(target + ' is geen lijst');
     this.push(target.length);
   }
 }
@@ -1077,7 +1077,7 @@ class SliceExpression extends Expression {
   check(env: Scope) {
     let targetType = this.target.check_(env);
     if (!targetType.isListType())
-      this.executionError('Target of slice expression must be a list');
+      this.executionError('Doen van een slice-uitdrukking moet een lijst zijn');
     this.startIndex.checkAgainst(env, intType);
     this.endIndex.checkAgainst(env, intType);
     return targetType;
@@ -1089,7 +1089,7 @@ class SliceExpression extends Expression {
     await this.endIndex.evaluate(env);
     let [target, startIndex, endIndex] = pop(3);
     if (!(target instanceof ListObject))
-      this.executionError(target + " is not a list");
+      this.executionError(target + " is geen lijst");
     if (startIndex < 0)
       startIndex += target.length;
     if (endIndex < 0)
@@ -1118,31 +1118,31 @@ class CallExpression extends Expression {
   check(env: Scope) {
     if (this.callee instanceof VariableExpression) {
       if (!has(toplevelMethods, this.callee.name))
-        this.executionError("No such function: " + this.callee.name);
+        this.executionError("Er bestaat geen functie met naam " + this.callee.name);
       this.method = toplevelMethods[this.callee.name];
       if (this.method.parameterDeclarations.length != this.arguments.length)
-        this.executionError("Incorrect number of arguments");
+        this.executionError("Fout aantal argumenten");
       for (let i = 0; i < this.arguments.length; i++)
         this.arguments[i].checkAgainst(env, this.method.parameterDeclarations[i].type.type!);
       return this.method.returnType.type!;
     } else
-      this.executionError("The callee expression must be a function name");
+      this.executionError("De opgeroepene-uitdrukking moet een functienaam zijn");
   }
 
   async evaluate(env: Scope) {
     if (this.callee instanceof VariableExpression) {
       if (!has(toplevelMethods, this.callee.name))
-        this.executionError("No such method: " + this.callee.name);
+        this.executionError("Er bestaat geen functie met naam " + this.callee.name);
       let method = toplevelMethods[this.callee.name];
       if (method.parameterDeclarations.length != this.arguments.length)
-        this.executionError("Incorrect number of arguments");
+        this.executionError("Fout aantal argumenten");
       for (let e of this.arguments)
         await e.evaluate(env);
       await this.breakpoint();
       let args = pop(this.arguments.length);
       await method.call(this, args);
     } else
-      this.executionError("Callee expression must be a name");
+      this.executionError("De opgeroepene-uitdrukking moet een functienaam zijn");
   }
 }
 
@@ -1317,7 +1317,7 @@ class ClassTypeExpression extends TypeExpression {
   }
   resolve() {
     if (!has(classes, this.name))
-      throw new LocError(this.loc, "No such class");
+      throw new LocError(this.loc, "Er bestaat geen klasse met deze naam");
     return this.type = classes[this.name].type;
   }
 }
@@ -1350,7 +1350,7 @@ class VariableDeclarationStatement extends Statement {
   check(env: Scope) {
     this.type.resolve();
     if (env.tryLookup(this.name) != null)
-      throw new ExecutionError(this.nameLoc, "Variable '" + this.name + "' already exists in this scope.");
+      throw new ExecutionError(this.nameLoc, "Er bestaat hier al een variabele met naam '" + this.name + "'.");
     this.init.checkAgainst(env, this.type.type!);
     env.bindings[this.name] = new LocalBinding(this, this.type.type);
   }
@@ -1395,10 +1395,10 @@ class ReturnStatement extends Statement {
   check(env: Scope) {
     let resultType = env.tryLookup("#result");
     if (resultType == null)
-      this.executionError("Cannot return here");
+      this.executionError("'return'-opdrachten zijn hier niet toegelaten");
     if (this.operand == null) {
       if (resultType.value != voidType)
-        this.executionError("Return value expected");
+        this.executionError("Resultaatwaarde verwacht");
     } else {
       this.operand.checkAgainst(env, resultType.value);
     }
@@ -1456,7 +1456,7 @@ class WhileStatement extends Statement {
     while (result === undefined) {
       iterationCount++;
       if (iterationCount == 1000)
-        this.executionError("Too many loop iterations. Possible infinite loop.");
+        this.executionError("Teveel lus-iteraties. Mogelijke oneindige lus.");
       await this.condition.evaluate(env);
       await this.breakpoint();
       let [b] = pop(1);
@@ -1515,7 +1515,7 @@ class AssertStatement extends Statement {
     await this.breakpoint();
     let [b] = pop(1);
     if (!b)
-      this.executionError("The assertion is false");
+      this.executionError("De bewering is onwaar");
   }
 }
 
@@ -1571,7 +1571,7 @@ class MethodDeclaration extends AbstractMethodDeclaration {
     let env = new Scope(null);
     for (let p of this.parameterDeclarations) {
       if (has(env.bindings, p.name))
-        this.executionError("Duplicate parameter name");
+        this.executionError("Er bestaat al een parameter met deze naam");
       env.bindings[p.name] = new LocalBinding(p, p.type.type);
     }
     env.bindings["#result"] = new LocalBinding(this, this.returnType.type);
@@ -1582,7 +1582,7 @@ class MethodDeclaration extends AbstractMethodDeclaration {
   async call(callExpr: CallExpression, args: Value[]) {
     let env = new Scope(null);
     if (callStack.length >= maxCallStackDepth)
-      throw new LocError(callExpr.loc, "Maximum call stack depth (= " + maxCallStackDepth + ") exceeded");
+      throw new LocError(callExpr.loc, "Maximum aantal genestelde oproepen (= " + maxCallStackDepth + ") overschreden");
     let stackFrame = new StackFrame(this.name, env);
     callStack.push(stackFrame);
     for (let i = 0; i < args.length; i++)
@@ -1604,7 +1604,7 @@ class MethodDeclaration extends AbstractMethodDeclaration {
   checkProofOutlines() {
     let env = this.parameterDeclarations.reduceRight((acc, d) => {
       return EnvCons(d.getProofOutlineVariable(() => {
-        return d.executionError(`Parameters of type ${d.type.type!.toString()} are not yet supported in proof outlines`);
+        return d.executionError(`Parameters van type ${d.type.type!.toString()} worden nog niet ondersteund in bewijssilhouetten`);
       }), acc)
     }, EnvNil);
     let outlineStart = null;
@@ -1616,16 +1616,16 @@ class MethodDeclaration extends AbstractMethodDeclaration {
       if (stmt instanceof ExpressionStatement && stmt.expr instanceof AssignmentExpression && stmt.expr.declaration != null)
         env = EnvCons(stmt.expr.declaration.name, env);
       if (stmt instanceof AssertStatement && stmt.comment != null) {
-        if (stmt.comment.text.includes('PRECONDITION')) {
+        if (stmt.comment.text.includes('PRECONDITIE') || stmt.comment.text.includes('PRECONDITIE')) {
           if (outlineStart != null)
-            stmt.executionError("Unexpected PRECONDITION tag inside proof outline");
+            stmt.executionError("Onverwachte PRECONDITIE-markering binnen in een bewijssilhouet");
           outlineStart = i;
           outlineStartEnv = env;
-          total = !stmt.comment.text.includes('PARTIAL CORRECTNESS');
+          total = !(stmt.comment.text.includes('PARTIËLE CORRECTHEID') || stmt.comment.text.includes('PARTIËLE CORRECTHEID') || stmt.comment.text.includes("PARTIELE CORRECTHEID"));
         }
-        if (stmt.comment.text.includes('POSTCONDITION')) {
+        if (stmt.comment.text.includes('POSTCONDITIE') || stmt.comment.text.includes("POSTCONDITIE")) {
           if (outlineStart == null)
-            return stmt.executionError("POSTCONDITION without PRECONDITION");
+            return stmt.executionError("POSTCONDITIE zonder PRECONDITIE");
           checkProofOutline(total!, outlineStartEnv!, this.bodyBlock.slice(outlineStart, i + 1));
           outlineStart = null;
           outlineStartEnv = null;
@@ -1670,7 +1670,7 @@ function parseProofOutlineExpression(e: Expression): Term_ {
       return BinOp(e.loc, Eq(TInt), Val(e.loc, 0), Val(e.loc, 1));
   else if (e instanceof VariableExpression)
     return Var(e.loc, e.getProofOutlineVariable(() => {
-      e.executionError(`Variables of type '${e.binding!.declaration.type.type}' are not yet supported in proof outlines`);
+      e.executionError(`Variablen van type '${e.binding!.declaration.type.type}' worden nog niet ondersteund in bewijssilhouetten`);
     }));
   else if (e instanceof BinaryOperatorExpression) {
     const t1 = parseProofOutlineExpression(e.leftOperand);
@@ -1691,7 +1691,7 @@ function parseProofOutlineExpression(e: Expression): Term_ {
       case '*': op = Mul; break;
       case '==':
         op = Eq(parseProofOutlineType(e.leftOperand.type!, () => {
-          e.executionError(`Comparing values of type ${e.leftOperand.type!} is not yet supported`);
+          e.executionError(`Het vergelijken van waarden van type ${e.leftOperand.type!} wordt nog niet ondersteund`);
         }));
         break;
       case '<=': op = Le; break;
@@ -1700,12 +1700,12 @@ function parseProofOutlineExpression(e: Expression): Term_ {
       case '>': return BinOp(e.loc, Le, BinOp(e.loc, Add, t2, Val(e.loc, 1)), t1);
       case '!=':
         const tp = parseProofOutlineType(e.leftOperand.type!, () => {
-          e.executionError(`Comparing values of type ${e.leftOperand.type!} is not yet supported`);
+          e.executionError(`Het vergelijken van waarden van type ${e.leftOperand.type!} wordt nog niet ondersteund`);
         });
         return Not(e.loc, BinOp(e.loc, Eq(tp), t1, t2));
       case '&&': op = And; break;
       default:
-        e.executionError("This binary operator is not yet supported in a proof outline");
+        e.executionError("Dit bewerkingsteken wordt nog niet ondersteund in bewijssilhouetten");
     }
     return BinOp(e.loc, op, t1, t2);
   } else if (e instanceof UnaryOperatorExpression) {
@@ -1714,12 +1714,12 @@ function parseProofOutlineExpression(e: Expression): Term_ {
       case 'not':
         return Not(e.loc, parseProofOutlineExpression(e.operand));
       default:
-        e.executionError("This unary operator is not yet supported in a proof outline");
+        e.executionError("Dit bewerkingsteken wordt nog niet ondersteund in bewijssilhouetten");
     }
   } else if (e instanceof CallExpression) {
     const parseType = (t: Type) => {
       return parseProofOutlineType(t, () => {
-        return e.callee.executionError("Calls of functions with a parameter or result of type '" + t.toString() + "' are not yet supported in a proof outline");
+        return e.callee.executionError("Oproepen van functies met een parameter van type '" + t.toString() + "' worden nog niet ondersteund in bewijssilhouetten");
       });
     };
     const constType = e.method!.parameterDeclarations.reduceRight(
@@ -1732,22 +1732,22 @@ function parseProofOutlineExpression(e: Expression): Term_ {
     );
   } else if (e instanceof ListExpression) {
     if (!e.elementType.type!.equals(intType))
-      e.executionError("Lists whose elements are not int values are not yet supported in a proof outline");
+      e.executionError("Lijsten waarvan de elementen geen int-waarden zijn worden nog niet ondersteund in bewijssilhouetten");
     return mkIntListTerm(e.loc, e.elementExpressions.map(parseProofOutlineExpression));
   } else if (e instanceof LenExpression) {
     if (!(e.target.type!.unwrapInferredType() as ListType).elementType.equals(intType))
-      e.executionError("Lists whose elements are not int values are not yet supported in a proof outline");
+      e.executionError("Lijsten waarvan de elementen geen int-waarden zijn worden nog niet ondersteund in bewijssilhouetten");
     return App(e.loc, Const(e.loc, intListLenConst), parseProofOutlineExpression(e.target));
   } else if (e instanceof SliceExpression) {
     if (!(e.target.type!.unwrapInferredType() as ListType).elementType.equals(intType))
-      e.executionError("Lists whose elements are not int values are not yet supported in a proof outline");
+      e.executionError("Lijsten waarvan de elementen geen int-waarden zijn worden nog niet ondersteund in bewijssilhouetten");
     return App(e.loc, App(e.loc, App(e.loc, Const(e.loc, intListSliceConst), parseProofOutlineExpression(e.target)), parseProofOutlineExpression(e.startIndex)), parseProofOutlineExpression(e.endIndex));
   } else if (e instanceof SubscriptExpression) {
     if (!(e.target.type!.unwrapInferredType() as ListType).elementType.equals(intType))
-      e.executionError("Lists whose elements are not int values are not yet supported in a proof outline");
+      e.executionError("Lijsten waarvan de elementen geen int-waarden zijn worden nog niet ondersteund in bewijssilhouetten");
     return App(e.loc, App(e.loc, Const(e.loc, intListSubscriptConst), parseProofOutlineExpression(e.target)), parseProofOutlineExpression(e.index));
   } else
-    e.executionError("This expression form is not yet supported in a proof outline");
+    e.executionError("Deze vorm van uitdrukking wordt nog niet ondersteund in een bewijssilhouet");
 }
 
 class JustificationScanner {
@@ -1766,7 +1766,7 @@ class JustificationScanner {
 
   eat() {
     this.pos++;
-    this.c = (this.pos == this.text.length ? "<EOF>" : this.text.charAt(this.pos));
+    this.c = (this.pos == this.text.length ? '<EINDE>' : this.text.charAt(this.pos));
   }
 
   nextToken0() {
@@ -1782,8 +1782,8 @@ class JustificationScanner {
       }
     }
     this.tokenStart = this.pos;
-    if (this.c == '<EOF>' || this.c == '#')
-      return '<EOF>';
+    if (this.c == '<EINDE>' || this.c == '#')
+      return '<EINDE>';
     if (isDigit(this.c)) {
       this.eat();
       while (isDigit(this.c))
@@ -1791,9 +1791,9 @@ class JustificationScanner {
       const text = this.text.substring(this.tokenStart, this.pos);
       const value = +text;
       if (text != value.toString())
-        this.error("Number too large");
+        this.error("Getal te groot");
       this.value = value;
-      return '<NUMBER>';
+      return '<GETAL>';
     }
     if (isAlpha(this.c)) {
       this.eat();
@@ -1812,7 +1812,7 @@ class JustificationScanner {
 
   expect(token: string) {
     if (this.token != token)
-      this.error(`'${token}' expected`);
+      this.error(`'${token}' verwacht`);
     const value = this.value;
     this.nextToken();
     return value;
@@ -1829,9 +1829,9 @@ class JustificationScanner {
 
 function expectConjunctIndex(scanner: JustificationScanner) {
   const lk = scanner.loc();
-  const k = scanner.expect('<NUMBER>')!;
+  const k = scanner.expect('<GETAL>')!;
   if (k == 0)
-    throw new LocError(lk, "Conjunct index must be positive");
+    throw new LocError(lk, "Conjunctnummer moet groter dan nul zijn");
   return k - 1;
 }
 
@@ -1852,7 +1852,7 @@ function parseJustification(scanner: JustificationScanner) {
       const l = scanner.loc();
       scanner.nextToken();
       scanner.expect('met');
-      if (scanner.token == '<NUMBER>') {
+      if (scanner.token == '<GETAL>') {
         const lk1 = scanner.loc();
         const k1 = expectConjunctIndex(scanner);
         scanner.expect('in');
@@ -1882,7 +1882,7 @@ function parseJustification(scanner: JustificationScanner) {
         const k = expectConjunctIndex(scanner);
         return JRewriteWithLaw(l, laws[lawName].law, ks_, lk, k);
       }
-      scanner.error("Conjunct index or Law name expected");
+      scanner.error("Conjunctnummer of naam van een wet verwacht");
     }
     default:
       if (has(laws, scanner.token)) {
@@ -1904,14 +1904,14 @@ function parseJustification(scanner: JustificationScanner) {
         const ks_ = ks.reduceRight((acc, [lk, k]) => LawAppIndicesCons(lk, k, acc), LawAppIndicesNil);
         return JLaw(l, laws[lawName].law, ks_);
       }
-      scanner.error("'Z' or 'Herschrijven' or law name expected");
+      scanner.error("'Z' of 'Herschrijven' of naam van een wet verwacht");
   }
 }
 
 function parseJustifications(comment: Comment_) {
   const scanner = new JustificationScanner(comment);
   scanner.nextToken();
-  if (scanner.token == '<EOF>')
+  if (scanner.token == '<EINDE>')
     return JustifNil;
   let result = JustifNil;
   for (;;) {
@@ -1921,8 +1921,8 @@ function parseJustifications(comment: Comment_) {
       break;
     scanner.nextToken();
   }
-  if (scanner.token != '<EOF>')
-    scanner.error("End of justification expected");
+  if (scanner.token != '<EINDE>')
+    scanner.error("Einde van de verantwoording verwacht");
   return result;
 }
 
@@ -1937,31 +1937,31 @@ function parseProofOutline(stmts: Statement[], i: number, precededByAssert: bool
   } else if (stmt instanceof ExpressionStatement && stmt.expr instanceof AssignmentExpression && stmt.expr.op == '=' && stmt.expr.lhs instanceof VariableExpression) {
     const lhs = stmt.expr.lhs;
     const x = stmt.expr.lhs.getProofOutlineVariable(() => {
-      return stmt.executionError(`Assigning to variables of type ${lhs.type} is not yet supported.`);
+      return stmt.executionError(`Toekenningen aan variabelen van het type ${lhs.type} worden nog niet ondersteund.`);
     });
     return Seq(Assign(stmt.loc, x, parseProofOutlineExpression(stmt.expr.rhs)), parseProofOutline(stmts, i + 1, false));
   } else if (stmt instanceof IfStatement) {
     if (stmt.elseBody == null)
-      return stmt.executionError("'if' statements in proof outlines must have an 'else' branch. Insert 'else: pass'");
+      return stmt.executionError("'if'-opdrachten in bewijssilhouetten moeten een 'else'-tak hebben. Voeg 'else: pass' toe.");
     if (!(stmt.thenBody instanceof BlockStatement) || !(stmt.elseBody instanceof BlockStatement))
-      return stmt.executionError("In a proof outline, the branches of an 'if' statement must be blocks.");
+      return stmt.executionError("In een bewijssilhouet moeten de takken van 'if'-opdrachten blokken zijn.");
     return Seq(If(stmt.loc, parseProofOutlineExpression(stmt.condition), parseProofOutline(stmt.thenBody.stmts, 0, false), parseProofOutline(stmt.elseBody.stmts, 0, false)), parseProofOutline(stmts, i + 1, false));
   } else if (stmt instanceof WhileStatement) {
     const cond = parseProofOutlineExpression(stmt.condition);
     if (!(stmt.body instanceof BlockStatement))
-      return stmt.body.executionError("In a proof outline, the body of a loop must be a block.");
+      return stmt.body.executionError("In een bewijssilhouet moet het lichaam van een lus een blok zijn.");
     const body = parseProofOutline(stmt.body.stmts, 0, false);
     return Seq(While(stmt.loc, cond, body), parseProofOutline(stmts, i + 1, false));
   } else if (stmt instanceof PassStatement) {
     return Seq(Pass(stmt.loc), parseProofOutline(stmts, i + 1, false));
   } else
-    return stmt.executionError("This statement form is not yet supported in a proof outline.");
+    return stmt.executionError("Deze vorm van opdracht wordt nog niet ondersteund in een bewijssilhouet.");
 }
 
 function checkProofOutline(total: boolean, env: Env_, stmts: Statement[]) {
   const outline = parseProofOutline(stmts, 0, false);
   if (!stmt_is_well_typed(env, outline))
-    throw new LocError(new Loc(stmts[0].loc.doc, stmts[0].loc.start, stmts[stmts.length - 1].loc.end), "Proof outline is not well-typed");
+    throw new LocError(new Loc(stmts[0].loc.doc, stmts[0].loc.start, stmts[stmts.length - 1].loc.end), "Het bewijssilhouet voldoet niet aan de typeregels");
   const result = check_proof_outline(total, outline);
   if (!isOk(result))
     throw new LocError(getLoc(result), getMsg(result));
@@ -1999,7 +1999,7 @@ class Class extends Declaration {
     this.type = new ClassType(this);
     for (let field of fields) {
       if (has(this.fields, field.name))
-        field.executionError("A field with this name already exists in this class");
+        field.executionError("Een veld met deze naam bestaat al in deze klasse");
       this.fields[field.name] = field;
     }
   }
@@ -2080,7 +2080,7 @@ class Parser {
 
   expect(token: string) {
     if (this.token != token)
-      this.parseError((token == 'EOF' ? "end of input " : token) + " expected");
+      this.parseError((token == 'EINDE' ? "einde van de invoer " : token) + " verwacht");
     this.next();
     return this.lastValue;
   }
@@ -2088,10 +2088,10 @@ class Parser {
   parsePrimaryExpression(): Expression {
     this.pushStart();
     switch (this.token) {
-      case "NUMBER":
+      case 'GETAL':
         this.next();
         return new IntLiteral(this.popLoc(), this.lastValue);
-      case "IDENT":
+      case 'NAAM':
         this.next();
         return new VariableExpression(this.popLoc(), this.lastValue);
       case "[": {
@@ -2116,7 +2116,7 @@ class Parser {
         let instrLoc = this.dupLoc();
         let type: TypeExpression|null = this.tryParsePrimaryType();
         if (type == null)
-          return this.parseError("Type expected");
+          return this.parseError("Type verwacht");
         if (this.token == '[') {
           this.next();
           let lengthExpr = null;
@@ -2145,16 +2145,16 @@ class Parser {
           let loc = this.popLoc();
           if (lengthExpr != null) {
             if (elementExpressions != null)
-              throw new LocError(loc, "Mention either a length or an initializer; not both.");
+              throw new LocError(loc, "Vermeld ofwel een lengte, ofwel een initialisatie-uitdrukking; niet beide.");
             return new NewArrayExpression(loc, instrLoc, type, lengthExpr);
           } else {
             if (elementExpressions == null)
-              throw new LocError(loc, "Mention either a length or an initializer");
+              throw new LocError(loc, "Vermeld een lengte of een initialisatie-uitdrukking.");
             return new ListExpression(loc, instrLoc, type, elementExpressions);
           }
         }
         if (!(type instanceof ClassTypeExpression))
-          throw new LocError(type.loc, "Class type expected");
+          throw new LocError(type.loc, "Klassetype verwacht");
         this.expect('(');
         this.expect(')');
         return new NewExpression(this.popLoc(), instrLoc, type.name);
@@ -2199,7 +2199,7 @@ class Parser {
         return new UnaryOperatorExpression(this.popLoc(), instrLoc, op, e);
       }
       default:
-        return this.parseError("Number or identifier expected");
+        return this.parseError("Getal of naam verwacht");
     }
   }
   
@@ -2212,7 +2212,7 @@ class Parser {
           this.pushStart();
           this.next();
           this.pushStart();
-          let x = this.expect('IDENT');
+          let x = this.expect('NAAM');
           let nameLoc = this.popLoc();
           let instrLoc = this.popLoc();
           e = new SelectExpression(this.dupLoc(), instrLoc, e, nameLoc, x);
@@ -2234,7 +2234,7 @@ class Parser {
           this.expect(')');
           if (e instanceof VariableExpression && e.name == 'len') {
             if (args.length != 1)
-              return this.parseError("'len' expects one argument");
+              return this.parseError("'len' verwacht één argument");
             e = new LenExpression(this.dupLoc(), instrLoc, args[0]);
           } else
             e = new CallExpression(this.dupLoc(), instrLoc, e, args);
@@ -2344,7 +2344,7 @@ class Parser {
         this.next();
         const notInstrLoc = this.popLoc();
         if (this.token != 'in')
-          this.parseError("'in' expected");
+          this.parseError("'in' verwacht");
         this.pushStart();
         this.next();
         const inInstrLoc = this.popLoc();
@@ -2465,7 +2465,7 @@ class Parser {
       case "float":
       case "double":
       case "char":
-        this.parseError("Type '" + this.token + "' is not (yet) supported by JLearner. Use type 'int'.");
+        this.parseError("Type '" + this.token + "' wordt (nog) niet ondersteund; gebruik type 'int'.");
       default:
         this.popLoc();
         return null;
@@ -2491,13 +2491,13 @@ class Parser {
   parseType() {
     let type = this.tryParseType();
     if (type == null)
-      this.parseError("Type expected");
+      this.parseError("Type verwacht");
     return type;
   }
 
   parseSuite(): BlockStatement {
     this.pushStart();
-    this.expect('EOL');
+    this.expect('REGELEINDE');
     this.expect('INDENT');
     let stmts = this.parseStatements({'DEDENT': true});
     this.expect('DEDENT');
@@ -2542,11 +2542,11 @@ class Parser {
         this.next();
         let instrLoc = this.popLoc();
         let e;
-        if (this.token == 'EOL')
+        if (this.token == 'REGELEINDE')
           e = null;
         else
           e = this.parseExpression();
-        this.expect('EOL');
+        this.expect('REGELEINDE');
         return new ReturnStatement(this.popLoc(), instrLoc, e);
       }
       case 'if': {
@@ -2557,20 +2557,20 @@ class Parser {
         this.next();
         let instrLoc = this.popLoc();
         let condition = this.parseExpression();
-        const comment = this.expect('EOL');
+        const comment = this.expect('REGELEINDE');
         return new AssertStatement(this.popLoc(), instrLoc, condition, comment);
       }
       case 'pass': {
         this.pushStart();
         this.next();
         let instrLoc = this.popLoc();
-        this.expect('EOL');
+        this.expect('REGELEINDE');
         return new PassStatement(this.popLoc(), instrLoc);
       }
     }
     let e = this.parseExpression();
     this.pushStart();
-    this.expect("EOL");
+    this.expect('REGELEINDE');
     let instrLoc = this.popLoc();
     return new ExpressionStatement(this.popLoc(), instrLoc, e);
   }
@@ -2601,7 +2601,7 @@ class Parser {
     let type = this.parseType();
     if (this.token == '(' && type instanceof ClassTypeExpression)
       this.parseError("Constructors are not (yet) supported by JLearner. Instead, define a 'create' method outside the class.");
-    let x = this.expect('IDENT');
+    let x = this.expect('NAAM');
     if (this.token == '(')
       this.parseError("Methods inside classes are not (yet) supported by JLearner. Instead, define the method outside the class.");
     if (this.token == '=')
@@ -2625,7 +2625,7 @@ class Parser {
       case 'def':
         this.next();
         this.pushStart();
-        let name = this.expect('IDENT');
+        let name = this.expect('NAAM');
         let nameLoc = this.popLoc();
         this.expect('(');
         let parameters = [];
@@ -2634,7 +2634,7 @@ class Parser {
             this.pushStart();
             let paramType = new ImplicitTypeExpression();
             this.pushStart();
-            let paramName = this.expect('IDENT');
+            let paramName = this.expect('NAAM');
             let paramNameLoc = this.popLoc();
             parameters.push(new ParameterDeclaration(this.popLoc(), paramType, paramNameLoc, paramName));
             if (this.token != ',')
@@ -2648,13 +2648,13 @@ class Parser {
         let type = new ImplicitTypeExpression();
         return new MethodDeclaration(this.popLoc(), type, nameLoc, name, parameters, body.stmts);
       default:
-        this.parseError("'class' or 'def' expected");
+        this.parseError("'class' of 'def' verwacht");
     }
   }
   
   parseDeclarations() {
     let declarations = [];
-    while (this.token != 'EOF')
+    while (this.token != 'EINDE')
       declarations.push(this.parseDeclaration());
     return declarations;
   }
@@ -2667,13 +2667,13 @@ function parseDeclarations(locFactory: LocFactory, text: string, parseComment: (
 
 function parseStatements(locFactory: LocFactory, text: string) {
   const parser = new Parser(locFactory, text);
-  return parser.parseStatements({'EOF': true});
+  return parser.parseStatements({'EINDE': true});
 }
 
 function parseExpression(locFactory: LocFactory, text: string) {
   const parser = new Parser(locFactory, text, true);
   const result = parser.parseExpression();
-  parser.expect('EOF');
+  parser.expect('EINDE');
   return result;
 }
 
@@ -2695,11 +2695,11 @@ function checkDeclarations(declarations: Declaration[]) {
   for (let declaration of declarations) {
     if (declaration instanceof Class) {
       if (has(classes, declaration.name))
-        throw new LocError(declaration.loc, "A class with the same name already exists");
+        throw new LocError(declaration.loc, "Er bestaat al een klasse met deze naam");
       classes[declaration.name] = declaration;
     } else {
       if (has(toplevelMethods, declaration.name))
-        throw new LocError(declaration.loc, "A method with the same name already exists");
+        throw new LocError(declaration.loc, "Er bestaat al een methode met deze naam");
       toplevelMethods[declaration.name] = declaration as AbstractMethodDeclaration;
     }
   }
@@ -2884,7 +2884,7 @@ function checkLaws() {
     const wetIndex = text.indexOf('Wet');
     const colonIndex = text.indexOf(':', wetIndex + 3);
     if (colonIndex < 0)
-      throw new LocError(comment.loc(), "Law must be of the form 'Wet NAME: PREMISES ==> CONCLUSION'");
+      throw new LocError(comment.loc(), "Wet moet van de vorm 'Wet NAAM: PREMISSEN ==> CONCLUSIE' zijn");
     const name = text.slice(wetIndex + 3, colonIndex).trim();
     const implication = text.substring(colonIndex + 1);
     const arrowIndex = implication.indexOf('==>');
@@ -2928,7 +2928,7 @@ function checkProofOutlines() {
     nbProofOutlinesChecked = 0;
     for (let m in toplevelMethods)
       toplevelMethods[m].checkProofOutlines();
-    alert(`${nbProofOutlinesChecked} proof outlines checked successfully!`);
+    alert(`${nbProofOutlinesChecked} bewijssilhouetten met succes gecontroleerd!`);
   });
 }
 
@@ -3225,7 +3225,7 @@ assert copy(7) == 7`,
   declarations:
 `def copy(n):
 
-    assert True # PRECONDITION PARTIAL CORRECTNESS
+    assert True # PRECONDITIE PARTIËLE CORRECTHEID
     assert 0 == n - n # Z
     i = n
     assert 0 == n - i
@@ -3241,7 +3241,7 @@ assert copy(7) == 7`,
     assert r == n - i and not i != 0
     assert r == n - i and i == 0 # Z op 2
     assert r == n - 0 # Herschrijven met 2 in 1
-    assert r == n # Z op 1 # POSTCONDITION
+    assert r == n # Z op 1 # POSTCONDITIE
 
     return r
 `,
@@ -3279,7 +3279,7 @@ assert copy(7) == 7`,
 
 def copy(n):
 
-    assert 0 <= n # PRECONDITION PARTIAL CORRECTNESS
+    assert 0 <= n # PRECONDITIE PARTIËLE CORRECTHEID
     assert 0 <= n and 0 == n - n # Z
     i = n
     assert 0 <= i and 0 == n - i
@@ -3296,7 +3296,7 @@ def copy(n):
     assert 0 <= i and r == n - i and i <= 0 # Z op 3
     assert r == n - i and i == 0 # LeAntisym op 3 en 1
     assert r == n - 0 # Herschrijven met 2 in 1
-    assert r == n # Z op 1 # POSTCONDITION
+    assert r == n # Z op 1 # POSTCONDITIE
 
     return r
 `,
@@ -3311,7 +3311,7 @@ assert copy(7) == 7`,
 
 def copy(n):
 
-    assert 0 <= n # PRECONDITION
+    assert 0 <= n # PRECONDITIE
     assert 0 <= n and 0 == n - n # Z
     i = n
     assert 0 <= i and 0 == n - i
@@ -3331,7 +3331,7 @@ def copy(n):
     assert 0 <= i and r == n - i and i <= 0 # Z op 3
     assert r == n - i and 0 == i # LeAntisym op 1 en 3
     assert r == n - 0 # Herschrijven met 2 in 1
-    assert r == n # Z op 1 # POSTCONDITION
+    assert r == n # Z op 1 # POSTCONDITIE
 
     return r
 `,
@@ -3378,7 +3378,7 @@ assert min(3, 2, 1) == 1`,
 
 def min(x, y, z):
 
-    assert True # PRECONDITION
+    assert True # PRECONDITIE
 
     if x <= y:
         assert True and x <= y
@@ -3409,7 +3409,7 @@ def min(x, y, z):
             assert result <= x and result <= y and result <= z
         assert result <= x and result <= y and result <= z
 
-    assert result <= x and result <= y and result <= z # POSTCONDITION
+    assert result <= x and result <= y and result <= z # POSTCONDITIE
 
     return result
 `,
@@ -3485,7 +3485,7 @@ assert my_min(3, 2, 1) == 1`,
 
 def my_min(x, y, z):
 
-    assert True # PRECONDITION
+    assert True # PRECONDITIE
 
     if x <= y:
         assert True and x <= y
@@ -3519,7 +3519,7 @@ def my_min(x, y, z):
             assert result == min(x, y, z)
         assert result == min(x, y, z)
 
-    assert result == min(x, y, z) # POSTCONDITION
+    assert result == min(x, y, z) # POSTCONDITIE
 
     return result
 `,
@@ -3583,7 +3583,7 @@ assert ones(3) == [1, 1, 1]`,
 
 def ones(n):
 
-    assert 0 <= n # PRECONDITION PARTIAL CORRECTNESS
+    assert 0 <= n # PRECONDITIE PARTIËLE CORRECTHEID
 
     assert 0 <= n <= n and [] == repeat(0, [1]) and n - n == 0 # Z of RepeatZero
     assert 0 <= n <= n and [] == repeat(n - n, [1]) # Herschrijven met 4 in 3
@@ -3606,7 +3606,7 @@ def ones(n):
     assert 0 == i and res == repeat(n - i, [1]) # LeAntisym op 1 en 4
     assert res == repeat(n - 0, [1]) and n - 0 == n # Herschrijven met 1 in 2 of Z
 
-    assert res == repeat(n, [1]) # Herschrijven met 2 in 1 # POSTCONDITION
+    assert res == repeat(n, [1]) # Herschrijven met 2 in 1 # POSTCONDITIE
 
     return res
 `,
@@ -3650,7 +3650,7 @@ assert length([4, 3, 2, 1]) == 4`,
 
 def length(xs):
 
-    assert xs != [] # PRECONDITION PARTIAL CORRECTNESS
+    assert xs != [] # PRECONDITIE PARTIËLE CORRECTHEID
     assert len(xs) == 1 + len(xs[:-1]) # LenNonempty op 1
     todo = xs[:-1]
     assert len(xs) == 1 + len(todo)
@@ -3668,7 +3668,7 @@ def length(xs):
     assert len(xs) == res + len(todo) and todo == []
     assert len(xs) == res + len([]) # Herschrijven met 2 in 1
     assert len(xs) == res + 0 # Herschrijven met LenEmpty in 1
-    assert res == len(xs) # Z op 1 # POSTCONDITION
+    assert res == len(xs) # Z op 1 # POSTCONDITIE
 
     return res`,
   statements:
@@ -3711,7 +3711,7 @@ assert concat([], [10]) == [10]`,
 
 def concat(xs, ys):
 
-    assert ys != [] # PRECONDITION PARTIAL CORRECTNESS
+    assert ys != [] # PRECONDITIE PARTIËLE CORRECTHEID
     assert ys != [] and xs + ys == xs + ys
     assert xs + (ys[:1] + ys[1:]) == xs + ys # Herschrijven met Nonempty op 1 in 2
     assert (xs + ys[:1]) + ys[1:] == xs + ys # Herschrijven met ConcatAssoc in 1
@@ -3730,7 +3730,7 @@ def concat(xs, ys):
     assert result + todo == xs + ys and not todo != []
     assert result + todo == xs + ys and todo == []
     assert result + [] == xs + ys # Herschrijven met 2 in 1
-    assert result == xs + ys # Herschrijven met ConcatEmpty in 1 # POSTCONDITION
+    assert result == xs + ys # Herschrijven met ConcatEmpty in 1 # POSTCONDITIE
 
     return result`,
   statements:
@@ -3748,7 +3748,7 @@ assert concat([], [10]) == [10]`,
 
 def concat(xs, ys):
 
-    assert ys != [] # PRECONDITION
+    assert ys != [] # PRECONDITIE
     assert ys != [] and xs + ys == xs + ys
     assert xs + (ys[:1] + ys[1:]) == xs + ys # Herschrijven met Nonempty op 1 in 2
     assert (xs + ys[:1]) + ys[1:] == xs + ys # Herschrijven met ConcatAssoc in 1
@@ -3771,7 +3771,7 @@ def concat(xs, ys):
     assert result + todo == xs + ys and not todo != []
     assert result + todo == xs + ys and todo == []
     assert result + [] == xs + ys # Herschrijven met 2 in 1
-    assert result == xs + ys # Herschrijven met ConcatEmpty in 1 # POSTCONDITION
+    assert result == xs + ys # Herschrijven met ConcatEmpty in 1 # POSTCONDITIE
 
     return result`,
   statements:
@@ -3838,7 +3838,7 @@ assert number_of_zeros([0, 10, 0, 5, 3, 0, 7]) == 3`,
 
 def number_of_zeros(xs):
 
-    assert True # PRECONDITION PARTIAL CORRECTNESS
+    assert True # PRECONDITIE PARTIËLE CORRECTHEID
     assert 0 <= 0 <= len(xs) and 0 == nb_zeros(xs[:0]) # Z of LenNonnegative of NbZerosEmpty
     i = 0
     assert 0 <= i <= len(xs) and 0 == nb_zeros(xs[:i])
@@ -3866,7 +3866,7 @@ def number_of_zeros(xs):
     assert len(xs) <= i <= len(xs) and n == nb_zeros(xs[:i]) # Z op 4
     assert i == len(xs) and n == nb_zeros(xs[:i]) # LeAntisym op 1 en 2
     assert n == nb_zeros(xs[:len(xs)]) # Herschrijven met 1 in 2
-    assert n == nb_zeros(xs) # Herschrijven met SliceFull in 1 # POSTCONDITION
+    assert n == nb_zeros(xs) # Herschrijven met SliceFull in 1 # POSTCONDITIE
     
     return n`,
   statements:
@@ -3934,7 +3934,7 @@ assert maximum([8]) == 8`,
 
 def maximum(xs):
 
-    assert 1 <= len(xs) # PRECONDITION PARTIAL CORRECTNESS
+    assert 1 <= len(xs) # PRECONDITIE PARTIËLE CORRECTHEID
     assert 1 <= 1 <= len(xs) and xs[0] == max(xs[:1]) # Z of MaxFirst op 1
     res = xs[0]
     assert 1 <= 1 <= len(xs) and res == max(xs[:1])
@@ -3960,7 +3960,7 @@ def maximum(xs):
     assert 1 <= i <= len(xs) and res == max(xs[:i]) and not i < len(xs)
     assert len(xs) <= i <= len(xs) and res == max(xs[:i]) # Z op 4
     assert res == max(xs[:len(xs)]) # Herschrijven met LeAntisym op 1 en 2 in 3
-    assert res == max(xs) # Herschrijven met SliceFull in 1 # POSTCONDITION
+    assert res == max(xs) # Herschrijven met SliceFull in 1 # POSTCONDITIE
 
     return res`,
   statements:
