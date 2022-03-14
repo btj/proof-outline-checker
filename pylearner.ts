@@ -3541,7 +3541,7 @@ assert my_min(3, 2, 1) == 1`,
     else:
         return repeat(n - 1, xs) + xs
 
-# Wet LeAntisym: x <= y <= z ==> x == y
+# Wet LeAntisym: x <= y <= x ==> x == y
 # Wet RepeatZero: repeat(0, xs) == []
 # Wet RepeatPlusOne: 0 <= n ==> repeat(n + 1, xs) == repeat(n, xs) + xs
 
@@ -3578,7 +3578,7 @@ assert ones(3) == [1, 1, 1]`,
     else:
         return repeat(n - 1, xs) + xs
 
-# Wet LeAntisym: x <= y <= z ==> x == y
+# Wet LeAntisym: x <= y <= x ==> x == y
 # Wet RepeatZero: repeat(0, xs) == []
 # Wet RepeatPlusOne: 0 <= n ==> repeat(n + 1, xs) == repeat(n, xs) + xs
 
