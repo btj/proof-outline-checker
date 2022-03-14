@@ -201,6 +201,19 @@ conjunct voor de eerste premisse `x <= y` van de wet `LeAntisym`, en de tweede c
 antecedent wordt opgegeven als overeenkomstige conjunct voor de tweede premisse `y <= x`.
 Dit verantwoordt de conjunct `i == n` van het consequent; dit is de overeenkomstige instantiatie van de conclusie van de wet.
 
+#### Uitgesteld
+
+Tijdens het opstellen van een bewijssilhouet in Bewijssilhouettencontroleur kan het nuttig zijn, het opstellen van de verantwoording voor een bepaalde gevolgtrekking uit te stellen tot later. Dit kan je gemakkelijk realiseren als volgt:
+
+```python
+# Wet Uitgesteld: b
+
+assert True
+assert 0 <= 0 # Uitgesteld
+```
+
+De wet `Uitgesteld` heeft geen premissen en heeft als conclusie een willekeurige bewering `b`. Deze wet is uiteraard niet logisch geldig; een oplossing die van deze wet gebruik maakt, kan uiteraard niet volledig juist gerekend worden. Echter, als je er niet in slaagt een bepaalde gevolgtrekking te verantwoorden, is het beter dat je ze uitstelt dan dat je een bewijssilhouet indient dat niet aanvaard wordt door Bewijssilhouettencontroleur.
+
 ### Herschrijven met wet op i1, i2, ... in j
 
 Als de conclusie van een wet een gelijkheid is, kan je het toevoegen van een conjunct overeenkomstig met de conclusie
