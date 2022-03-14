@@ -3012,6 +3012,7 @@ async function handleError(body: () => Promise<void>) {
     } else {
         errorWidgets.push(editor.markText(start, end, {className: "syntax-error"}));
         addErrorWidget(editor, start.line, ex.msg);
+        editor.scrollIntoView({from: start, to: end}, 50);
       }
     } else {
       alert(ex);
