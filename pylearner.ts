@@ -3350,6 +3350,9 @@ def min(x, y, z):
     # Het programma hieronder berekent in result het minimum van de getallen
     # x, y en z. Voorzie het van een gepaste preconditie en postconditie
     # en bewijs de correctheid.
+    # Let op: het volstaat hier dat je bewijst dat het resultaat niet groter
+    # is dan de invoerwaarden. Om een sterker resultaat te bewijzen, heb je
+    # een hulpfunctie nodig; zie daarvoor de volgende oefening.
 
     if x <= y:
         if x <= z:
