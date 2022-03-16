@@ -2198,6 +2198,8 @@ class Parser {
         let e = this.parseRelationalExpression();
         return new UnaryOperatorExpression(this.popLoc(), instrLoc, op, e);
       }
+      case "INDENT":
+        return this.parseError("De inspringing van deze regel komt niet overeen met die van de vorige regel");
       default:
         return this.parseError("Getal of naam verwacht");
     }
