@@ -96,7 +96,15 @@
     var declarationsEditor = CodeMirror.fromTextArea(document.getElementById('declarations'), {
       lineNumbers: false,
       matchBrackets: true,
-      mode: 'text/x-python'
+      mode: 'text/x-python',
+      extraKeys: {
+        Tab: cm => {
+          if (cm.somethingSelected())
+            cm.execCommand("indentMore");
+          else
+            cm.execCommand("insertSoftTab");
+        }
+      }
     });
     declarationsEditor.setSize("100%", "30em");
     cmResize(declarationsEditor);
@@ -104,7 +112,15 @@
     var statementsEditor = CodeMirror.fromTextArea(document.getElementById('statements'), {
       lineNumbers: false,
       matchBrackets: true,
-      mode: 'text/x-python'
+      mode: 'text/x-python',
+      extraKeys: {
+        Tab: cm => {
+          if (cm.somethingSelected())
+            cm.execCommand("indentMore");
+          else
+            cm.execCommand("insertSoftTab");
+        }
+      }
     });
     statementsEditor.on('changes', () => clearErrorWidgets());
     statementsEditor.setSize("100%", "10em");
@@ -127,14 +143,30 @@
     var expressionEditor = CodeMirror.fromTextArea(document.getElementById('expression'), {
       lineNumbers: false,
       matchBrackets: true,
-      mode: 'text/x-python'
+      mode: 'text/x-python',
+      extraKeys: {
+        Tab: cm => {
+          if (cm.somethingSelected())
+            cm.execCommand("indentMore");
+          else
+            cm.execCommand("insertSoftTab");
+        }
+      }
     });
     expressionEditor.on('changes', () => clearErrorWidgets());
     expressionEditor.setSize("100%", "3em");
     cmResize(expressionEditor);
     var resultsEditor = CodeMirror.fromTextArea(document.getElementById('results'), {
       matchBrackets: true,
-      mode: 'text/plain'
+      mode: 'text/plain',
+      extraKeys: {
+        Tab: cm => {
+          if (cm.somethingSelected())
+            cm.execCommand("indentMore");
+          else
+            cm.execCommand("insertSoftTab");
+        }
+      }
     });
     resultsEditor.setSize("100%", "10em");
     cmResize(resultsEditor);
