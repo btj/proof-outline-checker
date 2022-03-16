@@ -66,7 +66,7 @@ assert i == n # LeAntisym op 1 en 2
 # Wet Uitgesteld: b
 
 assert True
-assert 0 <= 0 # Uitgesteld
+assert 0 <= 0 # Uitgesteld # Wet van de gehele getallen
 ```
 
 ```python
