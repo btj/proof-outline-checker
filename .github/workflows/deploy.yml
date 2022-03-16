@@ -21,7 +21,7 @@ jobs:
         make pylearner.js
         node test.js
         mkdir dist
-        cp index.html doc.md *.js dist
+        cp index.html *.md *.js dist
         cd dist
         git init
         git config --global user.name "$GITHUB_REPOSITORY GitHub Actions runner"

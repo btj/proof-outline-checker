@@ -220,9 +220,8 @@ Als de conclusie van een wet een gelijkheid is, kan je het toevoegen van een con
 van de wet, en het herschrijven met die nieuwe conjunct in een andere conjunct, in één stap doen als volgt:
 
 ```python
-# Wet MaxList2: 1 <= i < len(xs) ==> max(xs[:i + 1]) == max(max(xs[:i]), xs[i])
+# Wet LeAntisym: x <= y and y <= x ==> x == y
 
-assert 1 <= i < len(xs) and max_ == max(xs[:i]) and xs[i] == max(max(xs[:i]), xs[i])
-assert 1 <= i < len(xs) and max_ == max(xs[:i]) and xs[i] == max(xs[:i + 1]) \
-    # Herschrijven met MaxList2 op 1 en 2 in 4
+assert i <= n and n <= i and res == xs[:i]
+assert res == xs[:n] # Herschrijven met LeAntisym op 1 en 2 in 3
 ```
