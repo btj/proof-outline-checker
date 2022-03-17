@@ -625,7 +625,7 @@ Fixpoint check_proof_outline(total: bool)(s: stmt): result unit (loc * string) :
           | Ok _ =>
             check_proof_outline total s
           end
-      | _ => Error (lw, "Het luslichaam moet beginnen met een toekenning gevolgd door een 'assert'-opdracht")
+      | _ => Error (lw, "Om totale correctheid te bewijzen van deze lus, moet het luslichaam beginnen met een toekenning gevolgd door een 'assert'-opdracht")
       end
     else
       match body with
