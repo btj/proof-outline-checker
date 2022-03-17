@@ -1608,6 +1608,7 @@ class MethodDeclaration extends AbstractMethodDeclaration {
       }), acc)
     }, EnvNil);
     let outlineStart = null;
+    let outlineStartComment = null;
     let outlineStartEnv = null;
     let total = null;
 
@@ -1616,22 +1617,27 @@ class MethodDeclaration extends AbstractMethodDeclaration {
       if (stmt instanceof ExpressionStatement && stmt.expr instanceof AssignmentExpression && stmt.expr.declaration != null)
         env = EnvCons(stmt.expr.declaration.name, env);
       if (stmt instanceof AssertStatement && stmt.comment != null) {
-        if (stmt.comment.text.includes('PRECONDITIE') || stmt.comment.text.includes('PRECONDITIE')) {
+        if (stmt.comment.text.includes('PRECONDITION') || stmt.comment.text.includes('PRECONDITIE')) {
           if (outlineStart != null)
             stmt.executionError("Onverwachte PRECONDITIE-markering binnen in een bewijssilhouet");
           outlineStart = i;
+          outlineStartComment = stmt.comment;
           outlineStartEnv = env;
-          total = !(stmt.comment.text.includes('PARTIËLE CORRECTHEID') || stmt.comment.text.includes('PARTIËLE CORRECTHEID') || stmt.comment.text.includes("PARTIELE CORRECTHEID"));
+          total = !(stmt.comment.text.includes('PARTIAL CORRECTNESS') || stmt.comment.text.includes('PARTIËLE CORRECTHEID') || stmt.comment.text.includes("PARTIELE CORRECTHEID"));
         }
-        if (stmt.comment.text.includes('POSTCONDITIE') || stmt.comment.text.includes("POSTCONDITIE")) {
+        if (stmt.comment.text.includes('POSTCONDITION') || stmt.comment.text.includes("POSTCONDITIE")) {
           if (outlineStart == null)
             return stmt.executionError("POSTCONDITIE zonder PRECONDITIE");
           checkProofOutline(total!, outlineStartEnv!, this.bodyBlock.slice(outlineStart, i + 1));
           outlineStart = null;
+          outlineStartComment = null;
           outlineStartEnv = null;
         }
       }
     }
+
+    if (outlineStartComment != null)
+      throw new LocError(outlineStartComment.loc(), "PRECONDITIE zonder POSTCONDITIE");
   }
 }
 
