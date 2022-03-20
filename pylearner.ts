@@ -3048,6 +3048,83 @@ function parseDeclarationsBox() {
   lastCheckedDeclarations = text;
 }
 
+type Pos = {line: number, ch: number};
+type CMRange = {from: Pos, to: Pos};
+
+let justificationLines: {[index: number]: {commentStart: number, antecedentConjunctRanges: CMRange[]}} = {};
+
+function harvestJustificationLines(text: string, stmts: Statement[]) {
+  for (let i = 0; i < stmts.length; i++) {
+    const stmt = stmts[i];
+    const prevStmt = i == 0 ? null : stmts[i - 1];
+    if (stmt instanceof AssertStatement && stmt.comment && prevStmt instanceof AssertStatement) {
+      const loc = stmt.comment.loc();
+      const start = getTextCoordsFromOffset(text, loc.start);
+      const antecedentConjuncts = conjunctsOf(prevStmt.condition);
+      justificationLines[start.line] = {
+        commentStart: start.ch,
+        antecedentConjunctRanges: antecedentConjuncts.map(c => ({
+          from: getTextCoordsFromOffset(text, c.loc.start),
+          to: getTextCoordsFromOffset(text, c.loc.end)
+        }))
+      };
+    } else if (stmt instanceof IfStatement) {
+      if (stmt.thenBody instanceof BlockStatement)
+        harvestJustificationLines(text, stmt.thenBody.stmts);
+      if (stmt.elseBody instanceof BlockStatement)
+        harvestJustificationLines(text, stmt.elseBody.stmts);
+    } else if (stmt instanceof WhileStatement)
+      if (stmt.body instanceof BlockStatement)
+        harvestJustificationLines(text, stmt.body.stmts);
+  }
+}
+
+function declarationsBoxChanged() {
+  justificationLines = {};
+
+  try {
+    let text = declarationsEditor.getValue();
+    let decls = parseDeclarations(mkLocFactory(declarationsEditor), text, () => {});
+    for (const decl of decls) {
+      if (decl instanceof MethodDeclaration) {
+        let proofOutlineStart = null;
+        for (let i = 0; i < decl.bodyBlock.length; i++) {
+          const stmt = decl.bodyBlock[i];
+          if (stmt instanceof AssertStatement) {
+            if (proofOutlineStart == null && stmt.comment && (stmt.comment.text.includes('PRECONDITION') || stmt.comment.text.includes('PRECONDITIE')))
+              proofOutlineStart = i;
+            else if (proofOutlineStart != null && stmt.comment && (stmt.comment.text.includes('POSTCONDITION') || stmt.comment.text.includes('POSTCONDITIE'))) {
+              harvestJustificationLines(text, decl.bodyBlock.slice(proofOutlineStart, i + 1));
+              proofOutlineStart = null;
+            }
+          }
+        }
+        if (proofOutlineStart != null)
+          harvestJustificationLines(text, decl.bodyBlock.slice(proofOutlineStart));
+      }
+    }
+  } catch (e) {}
+}
+
+const antecedentConjunctMarks: {clear(): void}[] = [];
+
+function declarationsBoxCursorMoved() {
+  for (const mark of antecedentConjunctMarks)
+    mark.clear();
+  antecedentConjunctMarks.length = 0;
+
+  const {line, ch} = declarationsEditor.getCursor();
+  const info = justificationLines[line];
+  if (info && info.commentStart <= ch) {
+    for (let i = 0; i < info.antecedentConjunctRanges.length && i < 20; i++) {
+      const {from, to} = info.antecedentConjunctRanges[i];
+      const element = document.createElement('span');
+      element.appendChild(document.createTextNode(String.fromCharCode(0x2460 + i)));
+      antecedentConjunctMarks.push(declarationsEditor.markText(from, to, {className: 'antecedent-conjunct', startStyle: 'antecedent-conjunct-start-' + (i + 1)}));
+    }
+  }
+}
+
 class SyntheticVariableBinding extends Binding {
   constructor(public name: string, public value: Value) {
     super(value);
