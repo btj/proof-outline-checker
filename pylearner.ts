@@ -604,7 +604,7 @@ class VariableExpression extends Expression {
 
 class AssignmentExpression extends Expression {
 
-  declaration: any;
+  declaration: VariableDeclarationStatement|null;
 
   constructor(loc: Loc, instrLoc: Loc, public lhs: Expression, public op: string, public rhs: Expression) {
     super(loc, instrLoc);
@@ -1343,6 +1343,12 @@ abstract class Statement extends ASTNode {
 }
 
 class VariableDeclarationStatement extends Statement {
+  proofOutlineVariable: Var_|undefined;
+  getProofOutlineVariable(onError: () => never): Var_ {
+    if (!this.proofOutlineVariable)
+      this.proofOutlineVariable = mkVar(this.name, parseProofOutlineType(this.type.type!, onError));
+    return this.proofOutlineVariable;
+  }
   constructor(loc: Loc, instrLoc: Loc, public type: TypeExpression, public nameLoc: Loc, public name: string, public init: Expression) {
     super(loc, instrLoc);
   }
@@ -1614,8 +1620,12 @@ class MethodDeclaration extends AbstractMethodDeclaration {
 
     for (let i = 0; i < this.bodyBlock.length; i++) {
       const stmt = this.bodyBlock[i];
-      if (stmt instanceof ExpressionStatement && stmt.expr instanceof AssignmentExpression && stmt.expr.declaration != null)
-        env = EnvCons(stmt.expr.declaration.name, env);
+      if (stmt instanceof ExpressionStatement && stmt.expr instanceof AssignmentExpression && stmt.expr.declaration != null) {
+        const d = stmt.expr.declaration;
+        env = EnvCons(d.getProofOutlineVariable(() => {
+          return d.executionError(`Variabelen van type ${d.type.type!.toString()} worden nog niet ondersteund in bewijssilhouetten`);
+        }), env);
+      }
       if (stmt instanceof AssertStatement && stmt.comment != null) {
         if (stmt.comment.text.includes('PRECONDITION') || stmt.comment.text.includes('PRECONDITIE')) {
           if (outlineStart != null)
