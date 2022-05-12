@@ -3878,6 +3878,124 @@ def concat(xs, ys):
 assert concat([], [10]) == [10]`,
   expression: `concat([100, 200], [300, 400])`
 }, {
+  title: 'Verhoog alle',
+  declarations:
+`def verhoog_alle(xs):
+    if xs == []:
+        return []
+    else:
+        return [xs[0] + 1] + verhoog_alle(xs[1:])
+
+# Wet VerhoogAlleLeeg: verhoog_alle([]) == []
+# Wet VerhoogAlleNietLeeg: xs != [] ==> verhoog_alle(xs) == [xs[0] + 1] + verhoog_alle(xs[1:]) 
+# Wet ConcatAssoc: (xs + ys) + zs == xs + (ys + zs)
+# Wet ConcatLeegRechts: xs + [] == xs
+# Wet LenNietLeeg: xs != [] ==> len(xs) == 1 + len(xs[1:]) 
+# Wet LenNietNeg: 0 <= len(xs)
+
+def mijn_verhoog_alle(xs):
+
+    # TTT MI maart 2022
+
+    # Het programma hieronder berekent in variabele 'res' de lijst die je krijgt
+    # als je alle elementen van de gegeven niet-lege lijst 'xs' verhoogt met 1.
+    # Voorzie het programma van een gepaste preconditie en postconditie en bewijs
+    # de correctheid. Geef een bewijs van partiële correctheid en een bewijs van
+    # totale correctheid.
+    # Verantwoord alle gevolgtrekkingen. Hiervoor mag je de formele notatie
+    # gebruiken die aanvaard wordt door de Bewijssilhouettencontroleur, maar dat
+    # is niet verplicht.
+    # Je mag in je toestandsbeweringen gebruik maken van de gegeven functie
+    # 'verhoog_alle' die dezelfde uitkomst berekent als dit programma, maar
+    # dan op een andere manier.
+
+    # Partiële correctheid:
+
+    res = [xs[0] + 1]
+    todo = xs[1:]
+    while todo != []:
+        res = res + [todo[0] + 1]
+        todo = todo[1:]
+
+    # Totale correctheid:
+
+    res = [xs[0] + 1]
+    todo = xs[1:]
+    while todo != []:
+        res = res + [todo[0] + 1]
+        todo = todo[1:]
+
+    return res
+`,
+  statements:
+`assert mijn_verhoog_alle([10, 20, 30]) == [11, 21, 31]
+assert mijn_verhoog_alle([130, 120, 110]) == [131, 121, 111]`,
+  expression: `mijn_verhoog_alle([7, 9, 20])`
+}, {
+  title: 'Verhoog alle (oplossing)',
+  declarations:
+`def verhoog_alle(xs):
+    if xs == []:
+        return []
+    else:
+        return [xs[0] + 1] + verhoog_alle(xs[1:])
+
+# Wet VerhoogAlleLeeg: verhoog_alle([]) == []
+# Wet VerhoogAlleNietLeeg: xs != [] ==> verhoog_alle(xs) == [xs[0] + 1] + verhoog_alle(xs[1:]) 
+# Wet ConcatAssoc: (xs + ys) + zs == xs + (ys + zs)
+# Wet ConcatLeegRechts: xs + [] == xs
+# Wet LenNietLeeg: xs != [] ==> len(xs) == 1 + len(xs[1:]) 
+# Wet LenNietNeg: 0 <= len(xs)
+
+def mijn_verhoog_alle(xs):
+
+    assert xs != [] # PRECONDITIE PARTIËLE CORRECTHEID
+    assert [xs[0] + 1] + verhoog_alle(xs[1:]) == verhoog_alle(xs) # VerhoogAlleNietLeeg op 1
+    res = [xs[0] + 1]
+    assert res + verhoog_alle(xs[1:]) == verhoog_alle(xs)
+    todo = xs[1:]
+    assert res + verhoog_alle(todo) == verhoog_alle(xs)
+    while todo != []:
+        assert res + verhoog_alle(todo) == verhoog_alle(xs) and todo != []
+        assert res + ([todo[0] + 1] + verhoog_alle(todo[1:])) == verhoog_alle(xs) # Herschrijven met VerhoogAlleNietLeeg op 2 in 1
+        assert (res + [todo[0] + 1]) + verhoog_alle(todo[1:]) == verhoog_alle(xs) # Herschrijven met ConcatAssoc in 1
+        res = res + [todo[0] + 1]
+        assert res + verhoog_alle(todo[1:]) == verhoog_alle(xs)
+        todo = todo[1:]
+        assert res + verhoog_alle(todo) == verhoog_alle(xs)
+    assert res + verhoog_alle(todo) == verhoog_alle(xs) and not todo != []
+    assert res + verhoog_alle(todo) == verhoog_alle(xs) and todo == [] 
+    assert res + verhoog_alle([]) == verhoog_alle(xs) # Herschrijven met 2 in 1
+    assert res + [] == verhoog_alle(xs) # Herschrijven met VerhoogAlleLeeg in 1
+    assert res == verhoog_alle(xs) # Herschrijven met ConcatLeegRechts in 1 # POSTCONDITIE
+
+    assert xs != [] # PRECONDITIE
+    assert [xs[0] + 1] + verhoog_alle(xs[1:]) == verhoog_alle(xs) # VerhoogAlleNietLeeg op 1
+    res = [xs[0] + 1]
+    assert res + verhoog_alle(xs[1:]) == verhoog_alle(xs)
+    todo = xs[1:]
+    assert res + verhoog_alle(todo) == verhoog_alle(xs)
+    while todo != []:
+        oude_variant = len(todo)
+        assert res + verhoog_alle(todo) == verhoog_alle(xs) and todo != [] and len(todo) == oude_variant
+        assert res + ([todo[0] + 1] + verhoog_alle(todo[1:])) == verhoog_alle(xs) and 1 + len(todo[1:]) == oude_variant # Herschrijven met VerhoogAlleNietLeeg op 2 in 1 of Herschrijven met LenNietLeeg op 2 in 3
+        assert (res + [todo[0] + 1]) + verhoog_alle(todo[1:]) == verhoog_alle(xs) and 0 <= len(todo[1:]) < oude_variant # Herschrijven met ConcatAssoc in 1 of LenNietNeg of Z op 2
+        res = res + [todo[0] + 1]
+        assert res + verhoog_alle(todo[1:]) == verhoog_alle(xs) and 0 <= len(todo[1:]) < oude_variant
+        todo = todo[1:]
+        assert res + verhoog_alle(todo) == verhoog_alle(xs) and 0 <= len(todo) < oude_variant
+    assert res + verhoog_alle(todo) == verhoog_alle(xs) and not todo != []
+    assert res + verhoog_alle(todo) == verhoog_alle(xs) and todo == [] 
+    assert res + verhoog_alle([]) == verhoog_alle(xs) # Herschrijven met 2 in 1
+    assert res + [] == verhoog_alle(xs) # Herschrijven met VerhoogAlleLeeg in 1
+    assert res == verhoog_alle(xs) # Herschrijven met ConcatLeegRechts in 1 # POSTCONDITIE
+
+    return res`,
+  statements:
+`assert mijn_verhoog_alle([10, 20, 30]) == [11, 21, 31]
+assert mijn_verhoog_alle([130, 120, 110]) == [131, 121, 111]`,
+  expression: `mijn_verhoog_alle([7, 9, 20])`
+}, {
   title: 'Aantal nullen',
   declarations:
 `def nb_zeros(xs):
