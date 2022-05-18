@@ -22,7 +22,7 @@ jobs:
         node test.js
         mkdir dist
         cp -R node_modules dist
-        cp index.html *.md *.js dist
+        cp index.html *.md *.js _config.yml dist
         cd dist
         git init
         git config --global user.name "$GITHUB_REPOSITORY GitHub Actions runner"
