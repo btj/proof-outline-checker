@@ -21,6 +21,7 @@ jobs:
         make pylearner.js
         node test.js
         mkdir dist
+        cp -R node_modules dist
         cp index.html *.md *.js dist
         cd dist
         git init

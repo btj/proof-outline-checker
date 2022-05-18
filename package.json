@@ -17,6 +17,8 @@
   },
   "homepage": "https://github.com/btj/proof-outline-checker#readme",
   "dependencies": {
+    "cm-resize": "^1.0.1",
+    "codemirror": "^5.65.3",
     "typescript": "^4.6.2"
   }
 }
