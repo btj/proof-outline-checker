@@ -488,8 +488,9 @@ class BinaryOperatorExpression extends Expression {
         return booleanType;
       case '-':
       case '*':
-      case '/':
+      case '//':
       case '%':
+      case '**':
       case '>>':
       case '>>>':
       case '<<':
@@ -499,6 +500,8 @@ class BinaryOperatorExpression extends Expression {
         this.leftOperand.checkAgainst(env, intType);
         this.rightOperand.checkAgainst(env, intType);
         return intType;
+      case '/':
+        return this.executionError("Ware deling (/) wordt niet ondersteund door PyLearner; deling met afronding naar beneden (//) wel.");
       case '<':
       case '<=':
       case '>':
@@ -521,22 +524,33 @@ class BinaryOperatorExpression extends Expression {
     }
   }
 
+  checkOverflow(x: number): number {
+    if (!(-Number.MAX_SAFE_INTEGER <= x && x <= Number.MAX_SAFE_INTEGER))
+      this.executionError("The result of this operation is too small or large for PyLearner"); // TODO: Use bigints
+    return x;
+  }
+
   eval(v1: Value, v2: Value) {
     switch (this.operator) {
       case '+':
         if (v1 instanceof ListObject && v2 instanceof ListObject)
           return v1.plus(v2);
         if (typeof v1 == 'number' && typeof v2 == 'number')
-          return (v1 + v2)|0;
+          return this.checkOverflow(v1 + v2);
         this.executionError("Foute operanden");
       case 'in':
         if (!(v2 instanceof ListObject))
           return this.executionError("Rechter operand is geen lijst");
         return v2.getElements().some(e => valueEquals(e, v1));
-      case '-': return (v1 - v2)|0;
-      case '*': return (v1 * v2)|0;
-      case '/': return (v1 / v2)|0;
-      case '%': return (v1 % v2)|0;
+      case '-': return this.checkOverflow(v1 - v2);
+      case '*': return this.checkOverflow(v1 * v2);
+      case '//': return Math.floor(v1 / v2);
+      case '%': return v1 % v2;
+      case '**': {
+        if (v2 < 0)
+          return this.executionError("Rechter operand is kleiner dan nul; machtsverheffing met een negatieve macht wordt niet ondersteund door PyLearner");
+        return this.checkOverflow(v1 ** v2);
+      }
       case '&': return v1 & v2;
       case '|': return v1 | v2;
       case '^': return v1 ^ v2;
@@ -2198,22 +2212,6 @@ class Parser {
         let e = this.parsePostfixExpression();
         return new IncrementExpression(this.popLoc(), instrLoc, e, op == '--', false);
       }
-      case "-": {
-        this.pushStart();
-        let op = this.token;
-        this.next();
-        let instrLoc = this.popLoc();
-        let e = this.parsePostfixExpression();
-        return new BinaryOperatorExpression(this.popLoc(), instrLoc, new IntLiteral(instrLoc, 0, true), '-', e);
-      }
-      case "not": {
-        this.pushStart();
-        let op = this.token;
-        this.next();
-        let instrLoc = this.popLoc();
-        let e = this.parseRelationalExpression();
-        return new UnaryOperatorExpression(this.popLoc(), instrLoc, op, e);
-      }
       case "INDENT":
         return this.parseError("De inspringing van deze regel komt niet overeen met die van de vorige regel");
       default:
@@ -2298,13 +2296,44 @@ class Parser {
     }
   }
 
+  parsePower() {
+    this.pushStart();
+    const e = this.parsePostfixExpression();
+    if (this.token == '**') {
+      this.pushStart();
+      this.next();
+      const instrLoc = this.popLoc();
+      const rightOperand = this.parseUnaryArithmeticExpression();
+      return new BinaryOperatorExpression(this.popLoc(), instrLoc, e, '**', rightOperand);
+    } else {
+      this.popLoc();
+      return e;
+    }
+  }
+
+  parseUnaryArithmeticExpression(): Expression {
+    switch (this.token) {
+      case '-':
+      case '+':
+        this.pushStart();
+        this.pushStart();
+        const op = this.token;
+        this.next();
+        const instrLoc = this.popLoc();
+        const e = this.parseUnaryArithmeticExpression();
+        return new BinaryOperatorExpression(this.popLoc(), instrLoc, new IntLiteral(instrLoc, 0, true), op, e);
+    }
+    return this.parsePower();
+  }
+
   parseMultiplicativeExpression() {
     this.pushStart();
-    let e = this.parsePostfixExpression();
+    let e = this.parseUnaryArithmeticExpression();
     for (;;) {
       switch (this.token) {
         case '*':
         case '/':
+        case '//':
         case '%':
           this.pushStart();
           let op = this.token;
@@ -2400,9 +2429,21 @@ class Parser {
       return chain;
   }
 
+  parseLogicalNegation(): Expression {
+    if (this.token == 'not') {
+      this.pushStart();
+      this.pushStart();
+      this.next();
+      const instrLoc = this.popLoc();
+      const e = this.parseLogicalNegation();
+      return new UnaryOperatorExpression(this.popLoc(), instrLoc, 'not', e);
+    }
+    return this.parseRelationalExpression();
+  }
+
   parseConjunction(): Expression {
     this.pushStart();
-    let e = this.parseRelationalExpression();
+    let e = this.parseLogicalNegation();
     if (this.token == 'and') {
       this.pushStart();
       this.next();
@@ -4351,7 +4392,7 @@ def grootste_gemene_deler(a, b):
     return x
 
 def kleinst_gemeen_veelvoud(a, b):
-    return a * b / ggd(a, b)
+    return a * b // ggd(a, b)
 `,
 statements:
 `assert kleinst_gemeen_veelvoud(15, 20) == 60`,
@@ -4512,9 +4553,19 @@ async function testExamples(examples: Example[]) {
 
 declare var secretExamples: Example[]|undefined;
 
+const hiddenTests = [
+  {
+    title: 'Hidden tests',
+    declarations: '',
+    statements: 'assert not not - 2 ** 2 ** 3 == -256',
+    expression: ''
+  }
+];
+
 async function testPyLearner() {
   currentBreakCondition = () => false;
   await testExamples(examples);
+  await testExamples(hiddenTests);
   console.log('All tests passed!');
   if (typeof secretExamples !== 'undefined') {
     await testExamples(secretExamples);
