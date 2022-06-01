@@ -1,0 +1,7 @@
+# Jekyll configuration for GitHub Pages
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor/
+include:
+  - node_modules
