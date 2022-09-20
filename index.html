@@ -51,7 +51,9 @@
     <table width="100%" style="table-layout: fixed"><tr>
     <td width="50%" style="vertical-align: top">
       <p><b>Declaraties:</b>
-        <button id="checkProofOutlinesButton" onClick="checkProofOutlines()">Controleer de bewijssilhouetten</button></p>
+        <button id="checkProofOutlinesButton" onClick="checkProofOutlines()">Controleer de bewijssilhouetten</button>
+        <input type="checkbox" id="checkEntailmentsCheckbox"></input>
+        <label for="checkEntailmentsCheckbox">Controleer de gevolgtrekkingen</label></p>
       <p><textarea id="declarations"></textarea></p>
       <p><b>Opdrachten:</b>
         <button id="executeButton" onClick="executeStatements(false)">Voer uit (Ctrl+Enter)</button>

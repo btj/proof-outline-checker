@@ -8,7 +8,7 @@ type TermList_ = {__brand: "proof_checker.(term list)"};
 type LawAppIndices_ = {__brand: "proof_checker.((loc, nat) prod list)"};
 type JustifList_ = {__brand: "proof_checker.(justif list)"};
 type Stmt_ = {__brand: "proof_checker.stmt"};
-type Result_ = {__brand: "proof_checker.((unit, (loc, string) prod) result)"};
+type Result_ = {__brand: "proof_checker.((error_type, (loc, string) prod) prod list)"};
 type Type_ = {__brand: "proof_checker.type"};
 type Var_ = {__brand: "proof_checker.((string * type0) prod)"};
 type Const_ = {__brand: "proof_checker.((string * type0) prod)"};
@@ -52,9 +52,11 @@ declare function If(l: Loc, condition: Term_, thenBody: Stmt_, elseBody: Stmt_):
 declare function While(l: Loc, t: Term_, body: Stmt_): Stmt_;
 declare function stmt_is_well_typed(env: Env_, stmt: Stmt_): boolean;
 declare function check_proof_outline(total: boolean, outline: Stmt_): Result_;
-declare function isOk(result: Result_): boolean;
+declare function isNil(result: Result_): boolean;
+declare function isShapeError(result: Result_): boolean;
 declare function getLoc(result: Result_): Loc;
 declare function getMsg(result: Result_): string;
+declare function getTail(result: Result_): Result_;
 
 function isDigit(c: string) { return '0' <= c && c <= '9'; }
 function isAlpha(c: string) { return 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || c == '_'; }
@@ -1570,7 +1572,7 @@ abstract class AbstractMethodDeclaration extends Declaration {
   abstract call(callExpr: Expression, args: Value[]): Promise<Value>;
   abstract enter(): void;
   abstract check(): void;
-  abstract checkProofOutlines(): void;
+  abstract checkProofOutlines(checkEntailments: boolean): void;
 }
 
 class MethodDeclaration extends AbstractMethodDeclaration {
@@ -1621,7 +1623,7 @@ class MethodDeclaration extends AbstractMethodDeclaration {
     push(new OperandBinding(callExpr, result));
   }
 
-  checkProofOutlines() {
+  checkProofOutlines(checkEntailments: boolean) {
     let env = this.parameterDeclarations.reduceRight((acc, d) => {
       return EnvCons(d.getProofOutlineVariable(() => {
         return d.executionError(`Parameters van type ${d.type.type!.toString()} worden nog niet ondersteund in bewijssilhouetten`);
@@ -1652,7 +1654,7 @@ class MethodDeclaration extends AbstractMethodDeclaration {
         if (stmt.comment.text.includes('POSTCONDITION') || stmt.comment.text.includes("POSTCONDITIE")) {
           if (outlineStart == null)
             return stmt.executionError("POSTCONDITIE zonder PRECONDITIE");
-          checkProofOutline(total!, outlineStartEnv!, this.bodyBlock.slice(outlineStart, i + 1));
+          checkProofOutline(checkEntailments, total!, outlineStartEnv!, this.bodyBlock.slice(outlineStart, i + 1));
           outlineStart = null;
           outlineStartComment = null;
           outlineStartEnv = null;
@@ -1988,13 +1990,21 @@ function parseProofOutline(stmts: Statement[], i: number, precededByAssert: bool
     return stmt.executionError("Deze vorm van opdracht wordt nog niet ondersteund in een bewijssilhouet.");
 }
 
-function checkProofOutline(total: boolean, env: Env_, stmts: Statement[]) {
+function checkProofOutline(checkEntailments: boolean, total: boolean, env: Env_, stmts: Statement[]) {
   const outline = parseProofOutline(stmts, 0, false);
   if (!stmt_is_well_typed(env, outline))
     throw new LocError(new Loc(stmts[0].loc.doc, stmts[0].loc.start, stmts[stmts.length - 1].loc.end), "Het bewijssilhouet voldoet niet aan de typeregels");
   const result = check_proof_outline(total, outline);
-  if (!isOk(result))
-    throw new LocError(getLoc(result), getMsg(result));
+  const shapeErrors = [];
+  const justificationErrors = [];
+  for (let errors = result; !isNil(errors); errors = getTail(errors))
+    if (isShapeError(errors))
+      shapeErrors.push(errors);
+    else
+      justificationErrors.push(errors);
+  const allErrors = checkEntailments ? [...shapeErrors, ...justificationErrors] : shapeErrors;
+  if (allErrors.length > 0)
+    throw new LocError(getLoc(allErrors[0]), getMsg(allErrors[0]));
   nbProofOutlinesChecked++;
 }
 
@@ -2984,9 +2994,10 @@ function checkProofOutlines() {
   handleError(async () => {
     parseDeclarationsBox();
     checkLaws();
+    const checkEntailments = (document.getElementById('checkEntailmentsCheckbox') as HTMLInputElement).checked;
     nbProofOutlinesChecked = 0;
     for (let m in toplevelMethods)
-      toplevelMethods[m].checkProofOutlines();
+      toplevelMethods[m].checkProofOutlines(checkEntailments);
     alert(`${nbProofOutlinesChecked} bewijssilhouetten met succes gecontroleerd!`);
   });
 }
@@ -4547,7 +4558,7 @@ async function testExamples(examples: Example[]) {
 
     checkLaws();
     for (let m in toplevelMethods)
-      toplevelMethods[m].checkProofOutlines();
+      toplevelMethods[m].checkProofOutlines(true);
   }
 }
 

@@ -572,83 +572,152 @@ Fixpoint assigned_vars(s: stmt): list var :=
   | Pass _ => []
   end.
 
-Fixpoint check_proof_outline(total: bool)(s: stmt): result unit (loc * string) :=
+Inductive error_type :=
+  ShapeError
+| JustificationError.
+
+Fixpoint check_proof_outline(total: bool)(s: stmt): list (error_type * (loc * string)) :=
   match s with
     Assert laP P _ ;; (Assert laP' P' js ;; _) as s =>
     match check_entailment P P' js with
-      Ok _ =>
-      check_proof_outline total s
-    | Error e => Error e
+      Ok _ => []
+    | Error e => [(JustificationError, e)]
     end
+    ++ check_proof_outline total s
   | Assert laP P _ ;; Assign lass x t ;; (Assert laQ Q _ ;; _) as s =>
-    if term_equivb P (subst x t Q) then
-      check_proof_outline total s
-    else
-      Error (lass, "Kan de correctheid van deze toekenning niet bewijzen; kan het toekenningsaxioma niet toepassen want de pre- en postconditie van de toekenning hebben niet de juiste vorm")
+    (
+      if term_equivb P (subst x t Q) then
+        []
+      else
+        [(ShapeError, (lass, "Kan de correctheid van deze toekenning niet bewijzen; kan het toekenningsaxioma niet toepassen want de pre- en postconditie van de toekenning hebben niet de juiste vorm"))]
+    )
+    ++ check_proof_outline total s
   | Assert laP P _ ;; If li C ((Assert laPthen Pthen _ ;; _) as thenBody) ((Assert laPelse Pelse _ ;; _) as elseBody) ;; (Assert laQ Q _ ;; _) as s =>
-    if negb (
-      term_equivb' Pthen (BinOp li And P C)
-      && ends_with_assert thenBody Q
-      && term_equivb' Pelse (BinOp li And P (Not li C))
-      && ends_with_assert elseBody Q
-    ) then
-      Error (li, "Kan de correctheid van deze 'if'-opdracht niet bewijzen; kan de regel voor 'if'-opdrachten niet toepassen want de pre- en postconditie van de 'if'-opdracht en van de beide takken hebben niet de juiste vorm")
-    else
-      match check_proof_outline total thenBody with
-        Error e => Error e
-      | Ok _ =>
-        match check_proof_outline total elseBody with
-          Error e => Error e
-        | Ok _ =>
-          check_proof_outline total s
-        end
-      end
+    (
+      if term_equivb' Pthen (BinOp li And P C) then
+        []
+      else
+        [(ShapeError, (li, "Kan de correctheid van deze 'if'-opdracht niet bewijzen; kan de regel voor 'if'-opdrachten niet toepassen want de preconditie van de 'then'-tak heeft niet de juiste vorm"))]
+    )
+    ++
+    (
+      if ends_with_assert thenBody Q then
+        []
+      else
+        [(ShapeError, (li, "Kan de correctheid van deze 'if'-opdracht niet bewijzen; kan de regel voor 'if'-opdrachten niet toepassen want de postconditie van de 'then'-tak heeft niet de juiste vorm"))]
+    )
+    ++
+    (
+      if term_equivb' Pelse (BinOp li And P (Not li C)) then
+        []
+      else
+        [(ShapeError, (li, "Kan de correctheid van deze 'if'-opdracht niet bewijzen; kan de regel voor 'if'-opdrachten niet toepassen want de preconditie van de 'else'-tak heeft niet de juiste vorm"))]
+    )
+    ++
+    (
+      if ends_with_assert elseBody Q then
+        []
+      else
+        [(ShapeError, (li, "Kan de correctheid van deze 'if'-opdracht niet bewijzen; kan de regel voor 'if'-opdrachten niet toepassen want de postconditie van de 'else'-tak heeft niet de juiste vorm"))]
+    )
+    ++
+    check_proof_outline total thenBody
+    ++
+    check_proof_outline total elseBody
+    ++
+    check_proof_outline total s
   | Assert laInv Inv _ ;; While lw C body ;; ((Assert laQ Q _ ;; _) as s) =>
+    (
     if total then
       match body with
         Assign las ((_, TInt) as x) V ;; ((Assert laP P _ ;; body1) as body0) =>
-        if existsb (var_eqb x) (free_vars Inv) then
-          Error (laInv, "Variable '" ++ fst x ++ "' mag niet voorkomen in de lusinvariant")
-        else if existsb (var_eqb x) (free_vars C) then
-          Error (lw, "Variable '" ++ fst x ++ "' mag niet voorkomen in de lusvoorwaarde")
-        else if existsb (var_eqb x) (assigned_vars body1) then
-          Error (loc_of_stmt body1, "Aan variable '" ++ fst x ++ "' mag niet toegekend worden in het luslichaam")
-        else if negb (
-          term_equivb' P (BinOp lw And Inv (BinOp lw And C (BinOp lw (Eq TInt) V (Var lw x)))) &&
-          ends_with_assert body1 (BinOp lw And Inv (BinOp lw And (BinOp lw Le (Val lw 0) V) (BinOp lw Le (BinOp lw Add V (Val lw 1)) (Var lw x)))) &&
-          term_equivb' Q (BinOp lw And Inv (Not lw C))
-        ) then
-          Error (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de pre- en postconditie van de lus en van het luslichaam hebben niet de juiste vorm")
-        else
-          match check_proof_outline total body0 with
-            Error e => Error e
-          | Ok _ =>
-            check_proof_outline total s
-          end
-      | _ => Error (lw, "Om totale correctheid te bewijzen van deze lus, moet het luslichaam beginnen met een toekenning gevolgd door een 'assert'-opdracht")
+        (
+          if existsb (var_eqb x) (free_vars Inv) then
+            [(ShapeError, (laInv, "Variable '" ++ fst x ++ "' mag niet voorkomen in de lusinvariant"))]
+          else
+            []
+        )
+        ++
+        (
+          if existsb (var_eqb x) (free_vars C) then
+            [(ShapeError, (lw, "Variable '" ++ fst x ++ "' mag niet voorkomen in de lusvoorwaarde"))]
+          else
+            []
+        )
+        ++
+        (
+          if existsb (var_eqb x) (assigned_vars body1) then
+            [(ShapeError, (loc_of_stmt body1, "Aan variable '" ++ fst x ++ "' mag niet toegekend worden in het luslichaam"))]
+          else
+            []
+        )
+        ++
+        (
+          if term_equivb' P (BinOp lw And Inv (BinOp lw And C (BinOp lw (Eq TInt) V (Var lw x)))) then
+            []
+          else
+            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de preconditie van het luslichaam heeft niet de juiste vorm"))]
+        )
+        ++
+        (
+          if ends_with_assert body1 (BinOp lw And Inv (BinOp lw And (BinOp lw Le (Val lw 0) V) (BinOp lw Le (BinOp lw Add V (Val lw 1)) (Var lw x)))) then
+            []
+          else
+            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de postconditie van het luslichaam heeft niet de juiste vorm"))]
+        )
+        ++
+        (
+          if term_equivb' Q (BinOp lw And Inv (Not lw C)) then
+            []
+          else
+            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de postconditie van de lus heeft niet de juiste vorm"))]
+        )
+        ++
+        check_proof_outline total body0
+      | _ =>
+        [(ShapeError, (lw, "Om totale correctheid te bewijzen van deze lus, moet het luslichaam beginnen met een toekenning gevolgd door een 'assert'-opdracht"))]
       end
     else
       match body with
         Assert laP P _ ;; _ =>
-        if negb (
-          term_equivb' P (BinOp laInv And Inv C)
-          && ends_with_assert body Inv
-          && term_equivb' Q (BinOp laInv And Inv (Not laInv C))
-        ) then
-          Error (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de pre- en postconditie van de lus en van het luslichaam hebben niet de juiste vorm")
-        else
-          match check_proof_outline total body with
-            Ok _ =>
-            check_proof_outline total s
-          | Error e => Error e
-          end
+        (
+          if term_equivb' P (BinOp laInv And Inv C) then
+            []
+          else
+            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de preconditie van het luslichaam heeft niet de juiste vorm"))]
+        )
+        ++
+        (
+          if ends_with_assert body Inv then
+            []
+          else
+            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de postconditie van het luslichaam heeft niet de juiste vorm"))]
+        )
+        ++
+        (
+          if term_equivb' Q (BinOp laInv And Inv (Not laInv C)) then
+            []
+          else
+            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de postconditie van de lus heeft niet de juiste vorm"))]
+        )
+        ++
+        check_proof_outline total body
       | _ =>
-        Error (loc_of_stmt body, "Luslichaam moet beginnen met een 'assert'-opdracht")
+        [(ShapeError, (loc_of_stmt body, "Luslichaam moet beginnen met een 'assert'-opdracht"))]
       end
+    )
+    ++
+    check_proof_outline total s
   | Assert laP P _ ;; Pass lp ;; ((Assert laQ Q _ ;; _) as s) =>
-    if negb (term_equivb P Q) then
-      Error (laP, "De preconditie van een 'pass-opdracht moet gelijk zijn aan haar postconditie")
-    else
-      check_proof_outline total s
-  | Assert laP P _ ;; Pass lp => Ok tt  | _ => Error (loc_of_stmt s, "Bewijssilhouet heeft een foute vorm")
+    (
+      if term_equivb P Q then
+        []
+      else
+        [(ShapeError, (laP, "De preconditie van een 'pass-opdracht moet gelijk zijn aan haar postconditie"))]
+    )
+    ++
+    check_proof_outline total s
+  | Assert laP P _ ;; Pass lp => []
+  | _ =>
+    [(ShapeError, (loc_of_stmt s, "Bewijssilhouet heeft een foute vorm"))]
   end.
