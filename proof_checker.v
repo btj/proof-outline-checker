@@ -589,7 +589,7 @@ Fixpoint check_proof_outline(total: bool)(s: stmt): list (error_type * (loc * st
       if term_equivb P (subst x t Q) then
         []
       else
-        [(ShapeError, (lass, "Kan de correctheid van deze toekenning niet bewijzen; kan het toekenningsaxioma niet toepassen want de pre- en postconditie van de toekenning hebben niet de juiste vorm"))]
+        [(ShapeError, (lass, "Kan de correctheid van deze toekenning niet bewijzen; kan het toekenningsaxioma niet toepassen want de pre- en postconditie van de toekenning hebben niet de juiste vorm$→ assert Q[E/x] # Q met E in plaats van x\n     x = E\n→ assert Q"))]
     )
     ++ check_proof_outline total s
   | Assert laP P _ ;; If li C ((Assert laPthen Pthen _ ;; _) as thenBody) ((Assert laPelse Pelse _ ;; _) as elseBody) ;; (Assert laQ Q _ ;; _) as s =>
@@ -604,21 +604,21 @@ Fixpoint check_proof_outline(total: bool)(s: stmt): list (error_type * (loc * st
       if ends_with_assert thenBody Q then
         []
       else
-        [(ShapeError, (li, "Kan de correctheid van deze 'if'-opdracht niet bewijzen; kan de regel voor 'if'-opdrachten niet toepassen want de postconditie van de 'then'-tak heeft niet de juiste vorm"))]
+        [(ShapeError, (li, "Kan de correctheid van deze 'if'-opdracht niet bewijzen; kan de regel voor 'if'-opdrachten niet toepassen want de postconditie van de 'then'-tak heeft niet de juiste vorm$     assert P\n     if C:\n         assert P and C\n         ...\n→     assert Q\n     else:\n         assert P and not C\n         ...\n         assert Q\n     assert Q"))]
     )
     ++
     (
       if term_equivb' Pelse (BinOp li And P (Not li C)) then
         []
       else
-        [(ShapeError, (li, "Kan de correctheid van deze 'if'-opdracht niet bewijzen; kan de regel voor 'if'-opdrachten niet toepassen want de preconditie van de 'else'-tak heeft niet de juiste vorm"))]
+        [(ShapeError, (li, "Kan de correctheid van deze 'if'-opdracht niet bewijzen; kan de regel voor 'if'-opdrachten niet toepassen want de preconditie van de 'else'-tak heeft niet de juiste vorm$     assert P\n     if C:\n         assert P and C\n         ...\n         assert Q\n     else:\n→     assert P and not C\n         ...\n         assert Q\n     assert Q"))]
     )
     ++
     (
       if ends_with_assert elseBody Q then
         []
       else
-        [(ShapeError, (li, "Kan de correctheid van deze 'if'-opdracht niet bewijzen; kan de regel voor 'if'-opdrachten niet toepassen want de postconditie van de 'else'-tak heeft niet de juiste vorm"))]
+        [(ShapeError, (li, "Kan de correctheid van deze 'if'-opdracht niet bewijzen; kan de regel voor 'if'-opdrachten niet toepassen want de postconditie van de 'else'-tak heeft niet de juiste vorm$     assert P\n     if C:\n         assert P and C\n         ...\n         assert Q\n     else:\n         assert P and not C\n         ...\n→     assert Q\n     assert Q"))]
     )
     ++
     check_proof_outline total thenBody
@@ -656,26 +656,26 @@ Fixpoint check_proof_outline(total: bool)(s: stmt): list (error_type * (loc * st
           if term_equivb' P (BinOp lw And Inv (BinOp lw And C (BinOp lw (Eq TInt) V (Var lw x)))) then
             []
           else
-            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de preconditie van het luslichaam heeft niet de juiste vorm"))]
+            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de preconditie van het luslichaam heeft niet de juiste vorm$     assert I # TOTALE CORRECTHEID\n     while C:\n         oude_variant = V\n→     assert I and C and V == oude_variant\n         ...\n         assert I and 0 <= V < oude_variant\n     assert I and not C"))]
         )
         ++
         (
           if ends_with_assert body1 (BinOp lw And Inv (BinOp lw And (BinOp lw Le (Val lw 0) V) (BinOp lw Le (BinOp lw Add V (Val lw 1)) (Var lw x)))) then
             []
           else
-            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de postconditie van het luslichaam heeft niet de juiste vorm"))]
+            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de postconditie van het luslichaam heeft niet de juiste vorm$     assert I # TOTALE CORRECTHEID\n     while C:\n         oude_variant = V\n         assert I and C and V == oude_variant\n         ...\n→     assert I and 0 <= V < oude_variant\n     assert I and not C"))]
         )
         ++
         (
           if term_equivb' Q (BinOp lw And Inv (Not lw C)) then
             []
           else
-            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de postconditie van de lus heeft niet de juiste vorm"))]
+            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de postconditie van de lus heeft niet de juiste vorm$     assert I # TOTALE CORRECTHEID\n     while C:\n         oude_variant = V\n         assert I and C and V == oude_variant\n         ...\n         assert I and 0 <= V < oude_variant\n→ assert I and not C"))]
         )
         ++
         check_proof_outline total body0
       | _ =>
-        [(ShapeError, (lw, "Om totale correctheid te bewijzen van deze lus, moet het luslichaam beginnen met een toekenning gevolgd door een 'assert'-opdracht"))]
+        [(ShapeError, (lw, "Om totale correctheid te bewijzen van deze lus, moet het luslichaam beginnen met een toekenning gevolgd door een 'assert'-opdracht$     assert I # TOTALE CORRECTHEID\n     while C:\n→     oude_variant = V\n         assert I and C and V == oude_variant\n         ...\n         assert I and 0 <= V < oude_variant\n     assert I and not C"))]
       end
     else
       match body with
@@ -684,26 +684,26 @@ Fixpoint check_proof_outline(total: bool)(s: stmt): list (error_type * (loc * st
           if term_equivb' P (BinOp laInv And Inv C) then
             []
           else
-            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de preconditie van het luslichaam heeft niet de juiste vorm"))]
+            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de preconditie van het luslichaam heeft niet de juiste vorm$     assert I # PARTIËLE CORRECTHEID\n     while C:\n→     assert I and C\n         ...\n         assert I\n     assert I and not C"))]
         )
         ++
         (
           if ends_with_assert body Inv then
             []
           else
-            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de postconditie van het luslichaam heeft niet de juiste vorm"))]
+            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de postconditie van het luslichaam heeft niet de juiste vorm$     assert I # PARTIËLE CORRECTHEID\n     while C:\n         assert I and C\n         ...\n→     assert I\n     assert I and not C""))]
         )
         ++
         (
           if term_equivb' Q (BinOp laInv And Inv (Not laInv C)) then
             []
           else
-            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de postconditie van de lus heeft niet de juiste vorm"))]
+            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de postconditie van de lus heeft niet de juiste vorm$     assert I # PARTIËLE CORRECTHEID\n     while C:\n         assert I and C\n         ...\n         assert I\n→ assert I and not C""))]
         )
         ++
         check_proof_outline total body
       | _ =>
-        [(ShapeError, (loc_of_stmt body, "Luslichaam moet beginnen met een 'assert'-opdracht"))]
+        [(ShapeError, (loc_of_stmt body, "Luslichaam moet beginnen met een 'assert'-opdracht$     assert I # PARTIËLE CORRECTHEID\n     while C:\n→     assert I and C\n         ...\n         assert I\n     assert I and not C""))]
       end
     )
     ++
@@ -713,7 +713,7 @@ Fixpoint check_proof_outline(total: bool)(s: stmt): list (error_type * (loc * st
       if term_equivb P Q then
         []
       else
-        [(ShapeError, (laP, "De preconditie van een 'pass-opdracht moet gelijk zijn aan haar postconditie"))]
+        [(ShapeError, (laP, "De preconditie van een 'pass-opdracht moet gelijk zijn aan haar postconditie$→ assert P\n     pass\n     assert P"))]
     )
     ++
     check_proof_outline total s
