@@ -691,19 +691,19 @@ Fixpoint check_proof_outline(total: bool)(s: stmt): list (error_type * (loc * st
           if ends_with_assert body Inv then
             []
           else
-            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de postconditie van het luslichaam heeft niet de juiste vorm$     assert I # PARTIËLE CORRECTHEID\n     while C:\n         assert I and C\n         ...\n→     assert I\n     assert I and not C""))]
+            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de postconditie van het luslichaam heeft niet de juiste vorm$     assert I # PARTIËLE CORRECTHEID\n     while C:\n         assert I and C\n         ...\n→     assert I\n     assert I and not C"))]
         )
         ++
         (
           if term_equivb' Q (BinOp laInv And Inv (Not laInv C)) then
             []
           else
-            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de postconditie van de lus heeft niet de juiste vorm$     assert I # PARTIËLE CORRECTHEID\n     while C:\n         assert I and C\n         ...\n         assert I\n→ assert I and not C""))]
+            [(ShapeError, (lw, "Kan de correctheid van deze lus niet bewijzen; kan de regel voor lussen niet toepassen want de postconditie van de lus heeft niet de juiste vorm$     assert I # PARTIËLE CORRECTHEID\n     while C:\n         assert I and C\n         ...\n         assert I\n→ assert I and not C"))]
         )
         ++
         check_proof_outline total body
       | _ =>
-        [(ShapeError, (loc_of_stmt body, "Luslichaam moet beginnen met een 'assert'-opdracht$     assert I # PARTIËLE CORRECTHEID\n     while C:\n→     assert I and C\n         ...\n         assert I\n     assert I and not C""))]
+        [(ShapeError, (loc_of_stmt body, "Luslichaam moet beginnen met een 'assert'-opdracht$     assert I # PARTIËLE CORRECTHEID\n     while C:\n→     assert I and C\n         ...\n         assert I\n     assert I and not C"))]
       end
     )
     ++
