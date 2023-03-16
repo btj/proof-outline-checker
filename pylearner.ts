@@ -3348,7 +3348,82 @@ function updateButtonStates() {
 type Example = {title: string, declarations: string, statements: string, expression: string};
 
 const examples: Example[] = [{
-  title: 'Kopieer een getal (partiële correctheid)',
+  title: 'Kopieer een getal (A)',
+  declarations:
+`# Wet LeAntisym: x <= y <= x ==> x == y
+
+def copy(n):
+
+    # Het programma hieronder kopieert het gegeven getal n in variabele r.
+    # Voorzie het van een gepaste preconditie en postconditie en
+    # bewijs eerst de partiële correctheid en dan de totale correctheid.
+
+    # Partiële correctheid:
+
+    r = 0
+    while r < n:
+        r = r + 1
+
+    # Totale correctheid:
+
+    r = 0
+    while r < n:
+        r = r + 1
+
+    return r
+`,
+  statements:
+`assert copy(2) == 2
+assert copy(7) == 7`,
+  expression: `copy(3)`
+}, {
+  title: 'Kopieer een getal (A) (oplossing)',
+  declarations:
+`# Wet LeAntisym: x <= y <= x ==> x == y
+
+def copy(n):
+
+    # Het programma hieronder kopieert het gegeven getal n in variabele r.
+    # Voorzie het van een gepaste preconditie en postconditie en
+    # bewijs eerst de partiële correctheid en dan de totale correctheid.
+
+    # Partiële correctheid:
+
+    assert 0 <= n # PRECONDITIE PARTIËLE CORRECTHEID
+    r = 0
+    assert r <= n
+    while r < n:
+        assert r <= n and r < n
+        assert r + 1 <= n # Z op 2
+        r = r + 1
+        assert r <= n
+    assert r <= n and not r < n
+    assert r <= n and n <= r # Z op 2
+    assert r == n # LeAntisym op 1 en 2 # POSTCONDITIE
+
+    # Totale correctheid:
+    
+    assert 0 <= n # PRECONDITIE
+    r = 0
+    assert r <= n
+    while r < n:
+        oude_variant = n - r
+        assert r <= n and r < n and n - r == oude_variant
+        assert r + 1 <= n and 0 <= n - (r + 1) < oude_variant # Z op 2 of Z op 3
+        r = r + 1
+        assert r <= n and 0 <= n - r < oude_variant
+    assert r <= n and not r < n
+    assert r <= n and n <= r # Z op 2
+    assert r == n # LeAntisym op 1 en 2 # POSTCONDITIE
+
+    return r
+`,
+  statements:
+`assert copy(2) == 2
+assert copy(7) == 7`,
+  expression: `copy(3)`
+}, {
+  title: 'Kopieer een getal (B) (partiële correctheid)',
   declarations:
 `def copy(n):
 
@@ -3369,7 +3444,7 @@ const examples: Example[] = [{
 assert copy(7) == 7`,
   expression: `copy(3)`
 }, {
-  title: 'Kopieer een getal (partiële correctheid) (oplossing)',
+  title: 'Kopieer een getal (B) (partiële correctheid) (oplossing)',
   declarations:
 `def copy(n):
 
@@ -3398,7 +3473,7 @@ assert copy(7) == 7`,
 assert copy(7) == 7`,
   expression: `copy(3)`
 }, {
-  title: 'Kopieer een getal (alternatief)',
+  title: 'Kopieer een getal (C)',
   declarations:
 `# Wet LeAntisym: x <= y <= x ==> x == y
 
@@ -3421,7 +3496,7 @@ def copy(n):
 assert copy(7) == 7`,
   expression: `copy(3)`
 }, {
-  title: 'Kopieer een getal (alternatief) (oplossing) (partiële correctheid)',
+  title: 'Kopieer een getal (C) (oplossing) (partiële correctheid)',
   declarations:
 `# Wet LeAntisym: x <= y <= x ==> x == y
 
@@ -3453,7 +3528,7 @@ def copy(n):
 assert copy(7) == 7`,
   expression: `copy(3)`
 }, {
-  title: 'Kopieer een getal (oplossing) (totale correctheid)',
+  title: 'Kopieer een getal (C) (oplossing) (totale correctheid)',
   declarations:
 `# Wet LeAntisym: x <= y and y <= x ==> x == y
 
