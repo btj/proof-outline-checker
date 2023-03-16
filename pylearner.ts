@@ -2005,7 +2005,6 @@ function checkProofOutline(checkEntailments: boolean, total: boolean, env: Env_,
   const allErrors = checkEntailments ? [...shapeErrors, ...justificationErrors] : shapeErrors;
   if (allErrors.length > 0) {
     const msg = getMsg(allErrors[0]).replaceAll("\\n", "\n").split('$');
-    console.log(msg);
     throw new LocError(getLoc(allErrors[0]), msg[0], msg.length > 1 ? ("\u200b"+msg[1]) : "");
   }
   nbProofOutlinesChecked++;
