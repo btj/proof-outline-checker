@@ -597,7 +597,7 @@ Fixpoint check_proof_outline(total: bool)(s: stmt): list (error_type * (loc * st
       if term_equivb' Pthen (BinOp li And P C) then
         []
       else
-        [(ShapeError, (li, "Kan de correctheid van deze 'if'-opdracht niet bewijzen; kan de regel voor 'if'-opdrachten niet toepassen want de preconditie van de 'then'-tak heeft niet de juiste vorm$    assert P\n    if C:\n→    assert P and C\n        ...\n        assert Q\n    else:\n        assert P and not C\n        ...\n        assert Q\n    assert Q"))]
+        [(ShapeError, (li, "Kan de correctheid van deze 'if'-opdracht niet bewijzen; kan de regel voor 'if'-opdrachten niet toepassen want de preconditie van de 'then'-tak heeft niet de juiste vorm$     assert P\n     if C:\n→     assert P and C\n         ...\n         assert Q\n     else:\n         assert P and not C\n         ...\n         assert Q\n     assert Q"))]
     )
     ++
     (
