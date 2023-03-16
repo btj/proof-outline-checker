@@ -2003,8 +2003,10 @@ function checkProofOutline(checkEntailments: boolean, total: boolean, env: Env_,
     else
       justificationErrors.push(errors);
   const allErrors = checkEntailments ? [...shapeErrors, ...justificationErrors] : shapeErrors;
-  if (allErrors.length > 0)
-    throw new LocError(getLoc(allErrors[0]), getMsg(allErrors[0]));
+  if (allErrors.length > 0) {
+    const msg = getMsg(allErrors[0]).split('&');
+    throw new LocError(getLoc(allErrors[0]), msg[0], msg.length > 1 ? msg[1] : "");
+  }
   nbProofOutlinesChecked++;
 }
 
@@ -2059,7 +2061,7 @@ function mkLocFactory(doc: any) {
 }
 
 class LocError extends Error {
-  constructor(public loc: Loc, public msg: string) {
+  constructor(public loc: Loc, public msg: string, public tooltip?: string) {
     super();
   }
 }
@@ -3046,12 +3048,13 @@ function clearErrorWidgets() {
   errorWidgets = [];
 }
 
-function addErrorWidget(editor: any, line: number, msg: string) {
+function addErrorWidget(editor: any, line: number, msg: string, tooltip?: string) {
   var widget = document.createElement("div");
   var icon = widget.appendChild(document.createElement("span"));
   icon.innerHTML = "!";
   icon.className = "lint-error-icon";
   widget.appendChild(document.createTextNode(msg));
+  if (tooltip) widget.setAttribute('title', tooltip);
   widget.className = "lint-error";
   errorWidgets.push(editor.addLineWidget(line, widget, {coverGutter: false, noHScroll: true}));
 }
@@ -3078,10 +3081,10 @@ async function handleError(body: () => Promise<void>) {
           start.ch--;
         }
         errorWidgets.push(editor.markText(start, {line: editor.lastLine()}, {className: "syntax-error"}));
-        addErrorWidget(editor, editor.lastLine(), ex.msg);
-    } else {
+        addErrorWidget(editor, editor.lastLine(), ex.msg, ex.tooltip);
+      } else {
         errorWidgets.push(editor.markText(start, end, {className: "syntax-error"}));
-        addErrorWidget(editor, start.line, ex.msg);
+        addErrorWidget(editor, start.line, ex.msg, ex.tooltip);
         editor.scrollIntoView({from: start, to: end}, 50);
       }
     } else {
