@@ -3348,6 +3348,94 @@ function updateButtonStates() {
 type Example = {title: string, declarations: string, statements: string, expression: string};
 
 const examples: Example[] = [{
+  title: 'Tel twee op',
+  declarations:
+`def plus2(x):
+
+    # Het programma hieronder berekent in r de waarde x plus 2.
+    # Voorzie het van een gepaste preconditie en postconditie en
+    # bewijs de correctheid.
+
+    y = x + 1
+    r = y + 1
+
+    return r
+`,
+  statements:
+`assert plus2(3) == 5
+assert plus2(5) == 7`,
+  expression: `plus2(9)`
+}, {
+  title: 'Tel twee op (oplossing)',
+  declarations:
+`def plus2(x):
+
+    # Het programma hieronder berekent in r de waarde x plus 2.
+    # Voorzie het van een gepaste preconditie en postconditie en
+    # bewijs de correctheid.
+
+    assert True # PRECONDITIE
+    assert (x + 1) + 1 == x + 2 # Z
+    y = x + 1
+    assert y + 1 == x + 2
+    r = y + 1
+    assert r == x + 2 # POSTCONDITIE
+
+    return r
+`,
+  statements:
+`assert plus2(3) == 5
+assert plus2(5) == 7`,
+  expression: `plus2(9)`
+}, {
+  title: 'Maximum van twee getallen',
+  declarations:
+`def max(x, y):
+
+    # Het programma hieronder berekent in r een getal dat niet kleiner is dan x en niet kleiner is dan y.
+    # Voorzie het van een gepaste preconditie en postconditie en
+    # bewijs de correctheid. (Je hoeft niet te bewijzen dat r gelijk is aan x of aan y.)
+
+    if x < y:
+        r = y
+    else:
+        r = x
+
+    return r
+`,
+  statements:
+`assert max(3, 5) == 5
+assert max(7, 5) == 7`,
+  expression: `max(10, 20)`
+}, {
+  title: 'Maximum van twee getallen (oplossing)',
+  declarations:
+`def max(x, y):
+
+    # Het programma hieronder berekent in r een getal dat niet kleiner is dan x en niet kleiner is dan y.
+    # Voorzie het van een gepaste preconditie en postconditie en
+    # bewijs de correctheid. (Je hoeft niet te bewijzen dat r gelijk is aan x of aan y.)
+
+    assert True # PRECONDITIE
+    if x < y:
+        assert True and x < y
+        assert x <= y and y <= y # Z op 2
+        r = y
+        assert x <= r and y <= r
+    else:
+        assert True and not x < y
+        assert x <= x and y <= x # Z op 2
+        r = x
+        assert x <= r and y <= r
+    assert x <= r and y <= r # POSTCONDITIE
+
+    return r
+`,
+  statements:
+`assert max(3, 5) == 5
+assert max(7, 5) == 7`,
+  expression: `max(10, 20)`
+}, {
   title: 'Kopieer een getal (A)',
   declarations:
 `# Wet LeAntisym: x <= y <= x ==> x == y
