@@ -1536,14 +1536,14 @@ class AssertStatement extends Statement {
     await this.condition.evaluate(env);
     await this.breakpoint();
     let [b] = pop(1);
-    function unrollBiCondition(condition: Expression) {
+    async function unrollBiCondition(condition: Expression) {
       if (condition instanceof BinaryOperatorExpression)
         return unrollBiCondition(condition.leftOperand) + "\n" + condition.operator + "\n" + unrollBiCondition(condition.rightOperand);
       else
         return await condition.evaluate(env);
     }
     if (!b) {
-      const tooltip = (this.condition instanceof BinaryOperatorExpression) ? "$"+unrollBiCondition(this.condition) : "";
+      const tooltip = (this.condition instanceof BinaryOperatorExpression) ? "$"+await unrollBiCondition(this.condition) : "";
       this.executionError("De bewering is onwaar"+tooltip);
     }
   }
