@@ -1542,7 +1542,7 @@ class AssertStatement extends Statement {
       else {
         await condition.evaluate(env);
         let [v] = pop(1);
-        return ""+v;
+        return v?.toString() ?? "None";
       }
     }
     if (!b) {
@@ -2014,10 +2014,8 @@ function checkProofOutline(checkEntailments: boolean, total: boolean, env: Env_,
     else
       justificationErrors.push(errors);
   const allErrors = checkEntailments ? [...shapeErrors, ...justificationErrors] : shapeErrors;
-  if (allErrors.length > 0) {
-    const msg = getMsg(allErrors[0]).replaceAll("\\n", "\n").split('$');
-    throw new LocError(getLoc(allErrors[0]), msg[0], msg.length > 1 ? ("\u200b"+msg[1]) : "");
-  }
+  if (allErrors.length > 0)
+    throw new LocError(getLoc(allErrors[0]), getMsg(allErrors[0]));
   nbProofOutlinesChecked++;
 }
 
@@ -2072,7 +2070,7 @@ function mkLocFactory(doc: any) {
 }
 
 class LocError extends Error {
-  constructor(public loc: Loc, public msg: string, public tooltip?: string) {
+  constructor(public loc: Loc, public msg: string) {
     super();
   }
 }
@@ -3059,13 +3057,18 @@ function clearErrorWidgets() {
   errorWidgets = [];
 }
 
-function addErrorWidget(editor: any, line: number, msg: string, tooltip?: string) {
+function addErrorWidget(editor: any, line: number, msg: string) {
   var widget = document.createElement("div");
   var icon = widget.appendChild(document.createElement("span"));
   icon.innerHTML = "!";
   icon.className = "lint-error-icon";
-  widget.appendChild(document.createTextNode(msg));
-  if (tooltip) widget.setAttribute('title', tooltip);
+  const msgs = msg.replaceAll("\\n", "\n").split('$');
+  widget.appendChild(document.createTextNode(msgs[0]));
+  if (msgs.length > 1) widget.setAttribute('title', "\u200b"+msgs[1]);
+  var closeButton = widget.appendChild(document.createElement("p"));
+  closeButton.innerHTML="❌";
+  closeButton.style="cursor: pointer;";
+  closeButton.onclick=function(){widget.style="display: none;"};
   widget.className = "lint-error";
   errorWidgets.push(editor.addLineWidget(line, widget, {coverGutter: false, noHScroll: true}));
 }
