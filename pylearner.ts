@@ -1536,9 +1536,9 @@ class AssertStatement extends Statement {
     await this.condition.evaluate(env);
     await this.breakpoint();
     let [b] = pop(1);
-    async function unrollBiCondition(condition: Expression): string {
+    async function unrollBiCondition(condition: Expression): Promise<string> {
       if (condition instanceof BinaryOperatorExpression)
-        return unrollBiCondition(condition.leftOperand) + "\n" + condition.operator + "\n" + unrollBiCondition(condition.rightOperand);
+        return await unrollBiCondition(condition.leftOperand) + "\n" + condition.operator + "\n" + await unrollBiCondition(condition.rightOperand);
       else {
         await condition.evaluate(env);
         let [v] = pop(1);
