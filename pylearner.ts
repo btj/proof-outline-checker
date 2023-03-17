@@ -1536,11 +1536,14 @@ class AssertStatement extends Statement {
     await this.condition.evaluate(env);
     await this.breakpoint();
     let [b] = pop(1);
-    async function unrollBiCondition(condition: Expression) {
+    async function unrollBiCondition(condition: Expression): string {
       if (condition instanceof BinaryOperatorExpression)
         return unrollBiCondition(condition.leftOperand) + "\n" + condition.operator + "\n" + unrollBiCondition(condition.rightOperand);
-      else
-        return await condition.evaluate(env);
+      else {
+        await condition.evaluate(env);
+        let [v] = pop(1);
+        return ""+v;
+      }
     }
     if (!b) {
       const tooltip = (this.condition instanceof BinaryOperatorExpression) ? "$"+await unrollBiCondition(this.condition) : "";
