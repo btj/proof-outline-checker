@@ -3066,9 +3066,9 @@ function addErrorWidget(editor: any, line: number, msg: string) {
   widget.appendChild(document.createTextNode(msgs[0]));
   if (msgs.length > 1) widget.setAttribute('title', "\u200b"+msgs[1]);
   var closeButton = widget.appendChild(document.createElement("p"));
-  closeButton.innerHTML="❌";
-  closeButton.style="cursor: pointer;";
-  closeButton.onclick=function(){widget.style="display: none;"};
+  closeButton.innerHTML = "❌";
+  closeButton.style.cursor = "pointer";
+  closeButton.onclick = function(){widget.style.display = "none";};
   widget.className = "lint-error";
   errorWidgets.push(editor.addLineWidget(line, widget, {coverGutter: false, noHScroll: true}));
 }
@@ -3095,10 +3095,10 @@ async function handleError(body: () => Promise<void>) {
           start.ch--;
         }
         errorWidgets.push(editor.markText(start, {line: editor.lastLine()}, {className: "syntax-error"}));
-        addErrorWidget(editor, editor.lastLine(), ex.msg, ex.tooltip);
+        addErrorWidget(editor, editor.lastLine(), ex.msg);
       } else {
         errorWidgets.push(editor.markText(start, end, {className: "syntax-error"}));
-        addErrorWidget(editor, start.line, ex.msg, ex.tooltip);
+        addErrorWidget(editor, start.line, ex.msg);
         editor.scrollIntoView({from: start, to: end}, 50);
       }
     } else {
