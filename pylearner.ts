@@ -1542,7 +1542,7 @@ class AssertStatement extends Statement {
       else {
         await condition.evaluate(env);
         let [v] = pop(1);
-        return v?.toString() ?? "None";
+        return JSON.stringify(v);
       }
     }
     if (!b) {
@@ -3063,9 +3063,9 @@ function addErrorWidget(editor: any, line: number, msg: string) {
   icon.innerHTML = "!";
   icon.className = "lint-error-icon";
   const msgs = msg.replaceAll("\\n", "\n").split('$');
-  widget.appendChild(document.createTextNode(msgs[0]));
+  widget.appendChild(document.createTextNode(msgs[0]+" "));
   if (msgs.length > 1) widget.setAttribute('title', "\u200b"+msgs[1]);
-  var closeButton = widget.appendChild(document.createElement("p"));
+  var closeButton = widget.appendChild(document.createElement("span"));
   closeButton.innerHTML = "❌";
   closeButton.style.cursor = "pointer";
   closeButton.onclick = function(){widget.style.display = "none";};
