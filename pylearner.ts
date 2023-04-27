@@ -3068,9 +3068,10 @@ function addErrorWidget(editor: any, line: number, msg: string) {
   var closeButton = widget.appendChild(document.createElement("span"));
   closeButton.innerHTML = "❌";
   closeButton.style.cursor = "pointer";
-  closeButton.onclick = function(){widget.style.display = "none";};
   widget.className = "lint-error";
-  errorWidgets.push(editor.addLineWidget(line, widget, {coverGutter: false, noHScroll: true}));
+  const lineWidget = editor.addLineWidget(line, widget, {coverGutter: false, noHScroll: true});
+  closeButton.onclick = function(){lineWidget.clear();};
+  errorWidgets.push(lineWidget);
 }
 
 async function handleError(body: () => Promise<void>) {
