@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Bewijssilhouettencontroleur</title>
+    <link rel="stylesheet" href="node_modules/codemirror/lib/codemirror.css">
+    <script src="node_modules/codemirror/lib/codemirror.js"></script>
+    <script src="node_modules/codemirror/addon/edit/matchbrackets.js"></script>
+    <link rel="stylesheet" href="node_modules/codemirror/addon/hint/show-hint.css">
+    <script src="node_modules/codemirror/addon/hint/show-hint.js"></script>
+    <script src="node_modules/codemirror/mode/python/python.js"></script>
+    <script src="node_modules/cm-resize/dist/cm-resize.min.js"></script>
+    <style>
+    body {font-family: Arial, Helvetica, sans-serif}
+    .result { font-style: italic; color: blue }
+    #callstack { background-color: lightgreen; border: 2px solid black; border-collapse: collapse }
+    .stackframe-title { text-align: center; border-top: 2px solid black; font-family: monospace; padding: 2px }
+    .stack-variable-name { text-align: right; font-family: monospace; padding: 2px 2px 2px 2px }
+    .keyword { font-family: monospace; font-weight: bold }
+    .stack-value-td { padding: 2px 2px 1.5px 2px }
+    .stack-value-div { padding: 1px 1px 1px 1px; background-color: white }
+    .object-table { background-color: #ffcccb; border: 2px solid black; border-radius: 5px; position: absolute }
+    .object-title-td { text-align: center; font-size: small }
+    .code { font-family: monospace; font-size: medium }
+    .field-name { text-align: right; font-family: monospace }
+    .field-value { background-color: white }
+    .CodeMirror {border: 1px solid black;}
+    .lint-error {font-family: arial; font-size: 70%; background: #ffa; color: #a00; padding: 2px 5px 3px; }
+    .lint-error-icon {color: white; background-color: red; font-weight: bold; border-radius: 50%; padding: 0 3px; margin-right: 7px;}
+    .syntax-error {background-color: #ff8080}
+    .current-instruction {background-color: lightgreen}
+    .antecedent-conjunct-start-1:before {content: '① '; color: black}
+    .antecedent-conjunct {background-color: lightskyblue}
+    .antecedent-conjunct-start-2:before {content: '② '; color: black}
+    .antecedent-conjunct-start-3:before {content: '③ '; color: black}
+    .antecedent-conjunct-start-4:before {content: '④ '; color: black}
+    .antecedent-conjunct-start-5:before {content: '⑤ '; color: black}
+    .antecedent-conjunct-start-6:before {content: '⑥ '; color: black}
+    .antecedent-conjunct-start-7:before {content: '⑦ '; color: black}
+    .antecedent-conjunct-start-8:before {content: '⑧ '; color: black}
+    .antecedent-conjunct-start-9:before {content: '⑨ '; color: black}
+    .cm-tab {
+         background: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAMCAYAAAAkuj5RAAAAAXNSR0IArs4c6QAAAGFJREFUSMft1LsRQFAQheHPowAKoACx3IgEKtaEHujDjORSgWTH/ZOdnZOcM/sgk/kFFWY0qV8foQwS4MKBCS3qR6ixBJvElOobYAtivseIE120FaowJPN75GMu8j/LfMwNjh4HUpwg4LUAAAAASUVORK5CYII=);
+         background-position: right;
+         background-repeat: no-repeat;
+      }
+    </style>
+  </head>
+  <body style="background: lightgray">
+    <table width="100%"><tr><td width="*1"><h1>Bewijssilhouettencontroleur</h1></td><td style="text-align: center">Voorbeelden: <select id="examples"></select></td><td style="text-align: right"><a href="doc.html">Documentatie</a> <a href="cheatsheet.html">Cheat sheet</a></td></tr></table>
+    <table width="100%" style="table-layout: fixed"><tr>
+    <td width="50%" style="vertical-align: top">
+      <p><b>Declaraties:</b>
+        <button id="checkProofOutlinesButton" onClick="checkProofOutlines()">Controleer de bewijssilhouetten</button>
+        <input type="checkbox" id="checkEntailmentsCheckbox"></input>
+        <label for="checkEntailmentsCheckbox">Controleer de gevolgtrekkingen</label></p>
+      <p><textarea id="declarations"></textarea></p>
+      <p><b>Opdrachten:</b>
+        <button id="executeButton" onClick="executeStatements(false)">Voer uit (Ctrl+Enter)</button>
+        <button id="resetAndExecuteButton" onClick="resetAndExecute()">Reset machine en voer uit (Shift+Ctrl+Enter)</button>
+        <button id="stepThroughStatementsButton" onclick="executeStatements(true)">Stap door</button></p>
+      <p><textarea id="statements"></textarea></p>
+      <p><b>Uitdrukking:</b> <button id="evaluateButton" onClick="evaluateExpression()">Evalueer (Ctrl+Enter)</button> <button id="stepThroughExpressionButton" onclick="evaluateExpression(true)">Stap door</button></p>
+      <p><textarea id="expression"></textarea></p>
+      <p><b>Uitkomsten:</b> <button onClick="resultsEditor.setValue('')">Wissen</button></p>
+      <p><textarea id="results"></textarea></p>
+    </td>
+    <td id="machine" height="100%" style="vertical-align: top; padding-left: 20px">
+      <p>
+        <button id="stepButton" onclick="step()" disabled>Stap</button>
+        <button id="smallStepButton" onclick="smallStep()" disabled>Kleine stap</button>
+        <button id="stepOverButton" onclick="stepOver()" disabled>Stap over</button>
+        <button id="stepOutButton" onClick="stepOut()" disabled>Stap uit</button>
+        <button id="continueButton" onclick="continue_()" disabled>Voer verder uit</button>
+        <button onclick="reset()">Reset (Ctrl+Esc)</button></p>
+      <div style="position: relative; display: flex; flex-direction: row; align-items: stretch">
+            <table id="callstack" style="background-color: lightgreen; border: 2px solid black; border-collapse: collapse">
+            </table>
+            <div id="heap" style="position: relative; flex-grow: 1; margin-left: 40px">
+            <!--
+            <table id="to" class="object-table">
+              <tr><td colspan="2" class="object-title-td"><span class="code" ><span class="keyword">int</span>[]</span> (id=1) (length=4)</td></tr>
+              <tr><td class="field-name"><span class="keyword">int</span> [0]</td><td class="field-value">50</td></tr>
+              <tr><td class="field-name">int [1]</td><td class="field-value">50</td></tr>
+            </table>
+            -->
+            </div>
+      <svg id="arrows-svg" style="position: absolute; left: 0; top: 0; pointer-events: none">
+        <defs>
+          <!-- arrowhead marker definition -->
+          <marker id="arrowhead" viewBox="0 0 10 10" refX="10" refY="5"
+              markerWidth="8" markerHeight="12"
+              orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" />
+          </marker>
+        </defs>
+
+        <!--
+        <line id="arrow" x1="0" y1="0" x2="200" y2="200" style="stroke:rgb(0,0,0);stroke-width:1"
+           marker-end="url(#arrowhead)" />
+        -->
+      </svg>
+    </div>
+    </td>
+    </tr>
+    </table>
+  <script>
+    var declarationsEditor = CodeMirror.fromTextArea(document.getElementById('declarations'), {
+      lineNumbers: false,
+      matchBrackets: true,
+      mode: 'text/x-python',
+      extraKeys: {
+        Tab: cm => {
+          if (cm.somethingSelected())
+            cm.execCommand("indentMore");
+          else
+            cm.execCommand("insertSoftTab");
+        }
+      }
+    });
+    declarationsEditor.setSize("100%", "30em");
+    cmResize(declarationsEditor);
+    declarationsEditor.on('changes', () => {
+      clearErrorWidgets();
+      declarationsBoxChanged();
+    });
+    declarationsEditor.on('cursorActivity', () => declarationsBoxCursorMoved());
+    var statementsEditor = CodeMirror.fromTextArea(document.getElementById('statements'), {
+      lineNumbers: false,
+      matchBrackets: true,
+      mode: 'text/x-python',
+      extraKeys: {
+        Tab: cm => {
+          if (cm.somethingSelected())
+            cm.execCommand("indentMore");
+          else
+            cm.execCommand("insertSoftTab");
+        }
+      }
+    });
+    statementsEditor.on('changes', () => clearErrorWidgets());
+    statementsEditor.setSize("100%", "10em");
+    cmResize(statementsEditor);
+    statementsEditor.on('keydown', (editor, event) => {
+      if (event.keyCode == 13 && event.ctrlKey) {
+        event.preventDefault();
+        if (event.shiftKey)
+          resetAndExecute();
+        else
+          executeStatements(false);
+      }
+    });
+    document.addEventListener('keydown', event => {
+      if (event.keyCode == 27 && event.ctrlKey) {
+        event.preventDefault();
+        reset();
+      }
+    });
+    var expressionEditor = CodeMirror.fromTextArea(document.getElementById('expression'), {
+      lineNumbers: false,
+      matchBrackets: true,
+      mode: 'text/x-python',
+      extraKeys: {
+        Tab: cm => {
+          if (cm.somethingSelected())
+            cm.execCommand("indentMore");
+          else
+            cm.execCommand("insertSoftTab");
+        }
+      }
+    });
+    expressionEditor.on('changes', () => clearErrorWidgets());
+    expressionEditor.setSize("100%", "3em");
+    cmResize(expressionEditor);
+    var resultsEditor = CodeMirror.fromTextArea(document.getElementById('results'), {
+      matchBrackets: true,
+      mode: 'text/plain',
+      extraKeys: {
+        Tab: cm => {
+          if (cm.somethingSelected())
+            cm.execCommand("indentMore");
+          else
+            cm.execCommand("insertSoftTab");
+        }
+      }
+    });
+    resultsEditor.setSize("100%", "10em");
+    cmResize(resultsEditor);
+    expressionEditor.on('keydown', (editor, event) => {
+      if (event.keyCode == 13 && event.ctrlKey) {
+        event.preventDefault();
+        evaluateExpression(false);
+      }
+    });
+  </script>
+      <!-- script>
+      let machine = document.getElementById('arrows-svg');
+      let arrow = document.getElementById('arrow');
+      let from = document.getElementById('from');
+      let to = document.getElementById('to');
+      let fromRects = from.getClientRects();
+      console.log(fromRects);
+      let toRects = to.getClientRects();
+      console.log(toRects);
+      let machineRects = machine.getClientRects();
+      console.log(machineRects);
+      arrow.x1.baseVal.value = (fromRects[0].left + fromRects[0].right) / 2 - machineRects[0].left;
+      arrow.y1.baseVal.value = (fromRects[0].top + fromRects[0].bottom) / 2 - machineRects[0].top;
+      arrow.x2.baseVal.value = toRects[0].left - machineRects[0].left;
+      arrow.y2.baseVal.value = toRects[0].top - machineRects[0].top;
+      </script -->
+  <script src="proof_checker.js"></script>
+  <script src="pylearner.js"></script>
+  <script>initExamples();</script>
+  </body>
+</html>
