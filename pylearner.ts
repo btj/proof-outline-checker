@@ -1536,8 +1536,19 @@ class AssertStatement extends Statement {
     await this.condition.evaluate(env);
     await this.breakpoint();
     let [b] = pop(1);
-    if (!b)
-      this.executionError("De bewering is onwaar");
+    async function unrollBiCondition(condition: Expression): Promise<string> {
+      if (condition instanceof BinaryOperatorExpression)
+        return await unrollBiCondition(condition.leftOperand) + "\n" + condition.operator + "\n" + await unrollBiCondition(condition.rightOperand);
+      else {
+        await condition.evaluate(env);
+        let [v] = pop(1);
+        return JSON.stringify(v);
+      }
+    }
+    if (!b) {
+      const tooltip = (this.condition instanceof BinaryOperatorExpression) ? "$"+await unrollBiCondition(this.condition) : "";
+      this.executionError("De bewering is onwaar"+tooltip);
+    }
   }
 }
 
@@ -3051,9 +3062,16 @@ function addErrorWidget(editor: any, line: number, msg: string) {
   var icon = widget.appendChild(document.createElement("span"));
   icon.innerHTML = "!";
   icon.className = "lint-error-icon";
-  widget.appendChild(document.createTextNode(msg));
+  const msgs = msg.replaceAll("\\n", "\n").split('$');
+  widget.appendChild(document.createTextNode(msgs[0]+" "));
+  if (msgs.length > 1) widget.setAttribute('title', "\u200b"+msgs[1]);
+  var closeButton = widget.appendChild(document.createElement("span"));
+  closeButton.innerHTML = "❌";
+  closeButton.style.cursor = "pointer";
   widget.className = "lint-error";
-  errorWidgets.push(editor.addLineWidget(line, widget, {coverGutter: false, noHScroll: true}));
+  const lineWidget = editor.addLineWidget(line, widget, {coverGutter: false, noHScroll: true});
+  closeButton.onclick = function(){lineWidget.clear();};
+  errorWidgets.push(lineWidget);
 }
 
 async function handleError(body: () => Promise<void>) {
@@ -3079,7 +3097,7 @@ async function handleError(body: () => Promise<void>) {
         }
         errorWidgets.push(editor.markText(start, {line: editor.lastLine()}, {className: "syntax-error"}));
         addErrorWidget(editor, editor.lastLine(), ex.msg);
-    } else {
+      } else {
         errorWidgets.push(editor.markText(start, end, {className: "syntax-error"}));
         addErrorWidget(editor, start.line, ex.msg);
         editor.scrollIntoView({from: start, to: end}, 50);
