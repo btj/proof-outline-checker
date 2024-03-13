@@ -3436,6 +3436,252 @@ assert max(7, 5) == 7`,
 assert max(7, 5) == 7`,
   expression: `max(10, 20)`
 }, {
+  title: 'Minimum van drie getallen',
+  declarations:
+`# Wet LeTrans: x <= y <= z ==> x <= z
+
+def min(x, y, z):
+
+    # Het programma hieronder berekent in result het minimum van de getallen
+    # x, y en z. Voorzie het van een gepaste preconditie en postconditie
+    # en bewijs de correctheid.
+    # Let op: het volstaat hier dat je bewijst dat het resultaat niet groter
+    # is dan de invoerwaarden. Om een sterker resultaat te bewijzen, heb je
+    # een hulpfunctie nodig; zie daarvoor de volgende oefening.
+
+    if x <= y:
+        if x <= z:
+            result = x
+        else:
+            result = z
+    else:
+        if y <= z:
+            result = y
+        else:
+            result = z
+
+    return result
+`,
+  statements:
+`assert min(1, 2, 3) == 1
+assert min(1, 3, 2) == 1
+assert min(2, 1, 3) == 1
+assert min(2, 3, 1) == 1
+assert min(3, 1, 2) == 1
+assert min(3, 2, 1) == 1`,
+  expression: `min(30, 20, 10)`
+}, {
+  title: 'Minimum van drie getallen (oplossing met zwakke postconditie)',
+  declarations:
+`# Wet LeTrans: x <= y <= z ==> x <= z
+
+def min(x, y, z):
+
+    assert True # PRECONDITIE
+
+    if x <= y:
+        assert True and x <= y
+        if x <= z:
+            assert True and x <= y and x <= z
+            assert x <= x and x <= y and x <= z # Z
+            result = x
+            assert result <= x and result <= y and result <= z
+        else:
+            assert True and x <= y and not x <= z
+            assert z <= x and x <= y # Z op 3
+            assert z <= x and z <= y and z <= z # LeTrans op 1 en 2 of Z
+            result = z
+            assert result <= x and result <= y and result <= z
+        assert result <= x and result <= y and result <= z
+    else:
+        assert True and not x <= y
+        if y <= z:
+            assert True and not x <= y and y <= z
+            assert y <= x and y <= y and y <= z # Z op 2 of Z
+            result = y
+            assert result <= x and result <= y and result <= z
+        else:
+            assert True and not x <= y and not y <= z
+            assert y <= x and z <= y # Z op 2 of Z op 3
+            assert z <= x and z <= y and z <= z # LeTrans op 2 en 1 of Z
+            result = z
+            assert result <= x and result <= y and result <= z
+        assert result <= x and result <= y and result <= z
+
+    assert result <= x and result <= y and result <= z # POSTCONDITIE
+
+    return result
+`,
+  statements:
+`assert min(1, 2, 3) == 1
+assert min(1, 3, 2) == 1
+assert min(2, 1, 3) == 1
+assert min(2, 3, 1) == 1
+assert min(3, 1, 2) == 1
+assert min(3, 2, 1) == 1`,
+  expression: `min(30, 20, 10)`
+}, {
+  title: 'Minimum van drie getallen (met min-functie)',
+  declarations:
+`def min(x, y, z):
+    if x <= y and x <= z:
+        return x
+    elif y <= x and y <= z:
+        return y
+    elif z <= x and z <= y:
+        return z
+
+# Wet min3_1: x <= y and x <= z ==> min(x, y, z) == x
+# Wet min3_2: y <= x and y <= z ==> min(x, y, z) == y
+# Wet min3_3: z <= x and z <= y ==> min(x, y, z) == z
+# Wet LeTrans: x <= y and y <= z ==> x <= z
+
+def my_min(x, y, z):
+
+    # Het programma hieronder berekent in result het minimum van
+    # de drie gegeven getallen x, y en z.
+    # Voorzie het van een gepaste preconditie en
+    # postconditie en bewijs de correctheid.
+    # Je mag in je toestandsbeweringen gebruik maken
+    # van de bovenstaande functie 'min'.
+
+    if x <= y:
+        if x <= z:
+            result = x
+        else:
+            result = z
+    else:
+        if y <= z:
+            result = y
+        else:
+            result = z
+
+    return result
+`,
+  statements:
+`assert my_min(1, 2, 3) == 1
+assert my_min(1, 3, 2) == 1
+assert my_min(2, 1, 3) == 1
+assert my_min(2, 3, 1) == 1
+assert my_min(3, 1, 2) == 1
+assert my_min(3, 2, 1) == 1`,
+  expression: `my_min(30, 20, 10)`
+}, {
+  title: 'Minimum van drie getallen (met min-functie) (oplossing)',
+  declarations:
+`def min(x, y, z):
+    if x <= y and x <= z:
+        return x
+    elif y <= x and y <= z:
+        return y
+    elif z <= x and z <= y:
+        return z
+
+# Wet min3_1: x <= y and x <= z ==> min(x, y, z) == x
+# Wet min3_2: y <= x and y <= z ==> min(x, y, z) == y
+# Wet min3_3: z <= x and z <= y ==> min(x, y, z) == z
+# Wet LeTrans: x <= y and y <= z ==> x <= z
+
+def my_min(x, y, z):
+
+    assert True # PRECONDITIE
+
+    if x <= y:
+        assert True and x <= y
+        if x <= z:
+            assert True and x <= y and x <= z
+            assert x == min(x, y, z) # min3_1 op 2 en 3
+            result = x
+            assert result == min(x, y, z)
+        else:
+            assert True and x <= y and not x <= z
+            assert z <= x and x <= y # Z op 3
+            assert z <= x and z <= y # LeTrans op 1 en 2
+            assert z == min(x, y, z) # min3_3 op 1 en 2
+            result = z
+            assert result == min(x, y, z)
+        assert result == min(x, y, z)
+    else:
+        assert True and not x <= y
+        if y <= z:
+            assert True and not x <= y and y <= z
+            assert y <= x and y <= z # Z op 2
+            assert y == min(x, y, z) # min3_2 op 1 en 2
+            result = y
+            assert result == min(x, y, z)
+        else:
+            assert True and not x <= y and not y <= z
+            assert y <= x and z <= y # Z op 2 of Z op 3
+            assert z <= x and z <= y # LeTrans op 2 en 1
+            assert z == min(x, y, z) # min3_3 op 1 en 2
+            result = z
+            assert result == min(x, y, z)
+        assert result == min(x, y, z)
+
+    assert result == min(x, y, z) # POSTCONDITIE
+
+    return result
+`,
+  statements:
+`assert my_min(1, 2, 3) == 1
+assert my_min(1, 3, 2) == 1
+assert my_min(2, 1, 3) == 1
+assert my_min(2, 3, 1) == 1
+assert my_min(3, 1, 2) == 1
+assert my_min(3, 2, 1) == 1`,
+  expression: `my_min(30, 20, 10)`
+}, {
+  title: 'Som van drie getallen',
+  declarations:
+`def som(x, y, z):
+
+    # Het programma hieronder berekent in r de som van x, y, en z.
+    # Voorzie het van een gepaste preconditie en postconditie en
+    # bewijs de correctheid.
+
+    a = x - y + z
+    b = y - z + x
+    c = z - x + y
+    r = a + b + c
+
+    return r
+`,
+  statements:
+`assert som(10, 20, 30) == 60`,
+  expression: `som(30, 20, 10)`
+}, {
+  title: 'Som van drie getallen (oplossing)',
+  declarations:
+`def som(x, y, z):
+
+    # Het programma hieronder berekent in r de som van x, y, en z.
+    # Voorzie het van een gepaste preconditie en postconditie en
+    # bewijs de correctheid.
+
+    assert True # PRECONDITIE
+    assert x - y + z == x - y + z
+    a = x - y + z
+    assert a == x - y + z
+    assert a == x - y + z and y - z + x == y - z + x
+    b = y - z + x
+    assert a == x - y + z and b == y - z + x
+    assert a == x - y + z and b == y - z + x and z - x + y == z - x + y
+    c = z - x + y
+    assert a == x - y + z and b == y - z + x and c == z - x + y
+    assert a == x - y + z and b == y - z + x and c == z - x + y and a + b + c == a + b + c
+    r = a + b + c
+    assert a == x - y + z and b == y - z + x and c == z - x + y and r == a + b + c
+    assert b == y - z + x and c == z - x + y and r == (x - y + z) + b + c # Herschrijven met 1 in 4
+    assert c == z - x + y and r == (x - y + z) + (y - z + x) + c # Herschrijven met 1 in 3
+    assert r == (x - y + z) + (y - z + x) + (z - x + y) # Herschrijven met 1 in 2
+    assert r == x + y + z # Z op 1 # POSTCONDITIE
+
+    return r
+`,
+  statements:
+`assert som(10, 20, 30) == 60`,
+  expression: `som(30, 20, 10)`
+}, {
   title: 'Kopieer een getal (A)',
   declarations:
 `# Wet LeAntisym: x <= y <= x ==> x == y
@@ -3650,201 +3896,6 @@ def copy(n):
 `assert copy(2) == 2
 assert copy(7) == 7`,
   expression: `copy(3)`
-}, {
-  title: 'Minimum van drie getallen',
-  declarations:
-`# Wet LeTrans: x <= y <= z ==> x <= z
-
-def min(x, y, z):
-
-    # Het programma hieronder berekent in result het minimum van de getallen
-    # x, y en z. Voorzie het van een gepaste preconditie en postconditie
-    # en bewijs de correctheid.
-    # Let op: het volstaat hier dat je bewijst dat het resultaat niet groter
-    # is dan de invoerwaarden. Om een sterker resultaat te bewijzen, heb je
-    # een hulpfunctie nodig; zie daarvoor de volgende oefening.
-
-    if x <= y:
-        if x <= z:
-            result = x
-        else:
-            result = z
-    else:
-        if y <= z:
-            result = y
-        else:
-            result = z
-
-    return result
-`,
-  statements:
-`assert min(1, 2, 3) == 1
-assert min(1, 3, 2) == 1
-assert min(2, 1, 3) == 1
-assert min(2, 3, 1) == 1
-assert min(3, 1, 2) == 1
-assert min(3, 2, 1) == 1`,
-  expression: `min(30, 20, 10)`
-}, {
-  title: 'Minimum van drie getallen (oplossing met zwakke postconditie)',
-  declarations:
-`# Wet LeTrans: x <= y <= z ==> x <= z
-
-def min(x, y, z):
-
-    assert True # PRECONDITIE
-
-    if x <= y:
-        assert True and x <= y
-        if x <= z:
-            assert True and x <= y and x <= z
-            assert x <= x and x <= y and x <= z # Z
-            result = x
-            assert result <= x and result <= y and result <= z
-        else:
-            assert True and x <= y and not x <= z
-            assert z <= x and x <= y # Z op 3
-            assert z <= x and z <= y and z <= z # LeTrans op 1 en 2 of Z
-            result = z
-            assert result <= x and result <= y and result <= z
-        assert result <= x and result <= y and result <= z
-    else:
-        assert True and not x <= y
-        if y <= z:
-            assert True and not x <= y and y <= z
-            assert y <= x and y <= y and y <= z # Z op 2 of Z
-            result = y
-            assert result <= x and result <= y and result <= z
-        else:
-            assert True and not x <= y and not y <= z
-            assert y <= x and z <= y # Z op 2 of Z op 3
-            assert z <= x and z <= y and z <= z # LeTrans op 2 en 1 of Z
-            result = z
-            assert result <= x and result <= y and result <= z
-        assert result <= x and result <= y and result <= z
-
-    assert result <= x and result <= y and result <= z # POSTCONDITIE
-
-    return result
-`,
-  statements:
-`assert min(1, 2, 3) == 1
-assert min(1, 3, 2) == 1
-assert min(2, 1, 3) == 1
-assert min(2, 3, 1) == 1
-assert min(3, 1, 2) == 1
-assert min(3, 2, 1) == 1`,
-  expression: `min(30, 20, 10)`
-}, {
-  title: 'Minimum van drie getallen (met min-functie)',
-  declarations:
-`def min(x, y, z):
-    if x <= y and x <= z:
-        return x
-    elif y <= x and y <= z:
-        return y
-    elif z <= x and z <= y:
-        return z
-
-# Wet min3_1: x <= y and x <= z ==> min(x, y, z) == x
-# Wet min3_2: y <= x and y <= z ==> min(x, y, z) == y
-# Wet min3_3: z <= x and z <= y ==> min(x, y, z) == z
-# Wet LeTrans: x <= y and y <= z ==> x <= z
-
-def my_min(x, y, z):
-
-    # Het programma hieronder berekent in result het minimum van
-    # de drie gegeven getallen x, y en z.
-    # Voorzie het van een gepaste preconditie en
-    # postconditie en bewijs de correctheid.
-    # Je mag in je toestandsbeweringen gebruik maken
-    # van de bovenstaande functie 'min'.
-
-    if x <= y:
-        if x <= z:
-            result = x
-        else:
-            result = z
-    else:
-        if y <= z:
-            result = y
-        else:
-            result = z
-
-    return result
-`,
-  statements:
-`assert my_min(1, 2, 3) == 1
-assert my_min(1, 3, 2) == 1
-assert my_min(2, 1, 3) == 1
-assert my_min(2, 3, 1) == 1
-assert my_min(3, 1, 2) == 1
-assert my_min(3, 2, 1) == 1`,
-  expression: `my_min(30, 20, 10)`
-}, {
-  title: 'Minimum van drie getallen (met min-functie) (oplossing)',
-  declarations:
-`def min(x, y, z):
-    if x <= y and x <= z:
-        return x
-    elif y <= x and y <= z:
-        return y
-    elif z <= x and z <= y:
-        return z
-
-# Wet min3_1: x <= y and x <= z ==> min(x, y, z) == x
-# Wet min3_2: y <= x and y <= z ==> min(x, y, z) == y
-# Wet min3_3: z <= x and z <= y ==> min(x, y, z) == z
-# Wet LeTrans: x <= y and y <= z ==> x <= z
-
-def my_min(x, y, z):
-
-    assert True # PRECONDITIE
-
-    if x <= y:
-        assert True and x <= y
-        if x <= z:
-            assert True and x <= y and x <= z
-            assert x == min(x, y, z) # min3_1 op 2 en 3
-            result = x
-            assert result == min(x, y, z)
-        else:
-            assert True and x <= y and not x <= z
-            assert z <= x and x <= y # Z op 3
-            assert z <= x and z <= y # LeTrans op 1 en 2
-            assert z == min(x, y, z) # min3_3 op 1 en 2
-            result = z
-            assert result == min(x, y, z)
-        assert result == min(x, y, z)
-    else:
-        assert True and not x <= y
-        if y <= z:
-            assert True and not x <= y and y <= z
-            assert y <= x and y <= z # Z op 2
-            assert y == min(x, y, z) # min3_2 op 1 en 2
-            result = y
-            assert result == min(x, y, z)
-        else:
-            assert True and not x <= y and not y <= z
-            assert y <= x and z <= y # Z op 2 of Z op 3
-            assert z <= x and z <= y # LeTrans op 2 en 1
-            assert z == min(x, y, z) # min3_3 op 1 en 2
-            result = z
-            assert result == min(x, y, z)
-        assert result == min(x, y, z)
-
-    assert result == min(x, y, z) # POSTCONDITIE
-
-    return result
-`,
-  statements:
-`assert my_min(1, 2, 3) == 1
-assert my_min(1, 3, 2) == 1
-assert my_min(2, 1, 3) == 1
-assert my_min(2, 3, 1) == 1
-assert my_min(3, 1, 2) == 1
-assert my_min(3, 2, 1) == 1`,
-  expression: `my_min(30, 20, 10)`
 }, {
   title: 'Lijst vol eenen',
   declarations:
