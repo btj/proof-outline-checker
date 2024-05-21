@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Build
       run: |
@@ -20,18 +20,20 @@ jobs:
         docker run --rm -v `pwd`:/workdir bartjacobs/coq-and-js_of_ocaml bash -c 'cd /workdir && make proof_checker.js'
         make pylearner.js
         node test.js
-        mkdir dist
-        cp -R node_modules dist
-        cp index.html *.md *.js _config.yml dist
-        cd dist
-        git init
-        git config --global user.name "$GITHUB_REPOSITORY GitHub Actions runner"
-        git config --global user.email "no@email"
-        git add .
-        git commit -m "Built from $GITHUB_SHA"
-        git remote add origin $GITHUB_SERVER_URL/$GITHUB_REPOSITORY
-        git checkout -b gh-pages
-        gh auth setup-git
-        git push -f origin gh-pages
+        if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+          mkdir dist
+          cp -R node_modules dist
+          cp index.html *.md *.js _config.yml dist
+          cd dist
+          git init
+          git config --global user.name "$GITHUB_REPOSITORY GitHub Actions runner"
+          git config --global user.email "no@email"
+          git add .
+          git commit -m "Built from $GITHUB_SHA"
+          git remote add origin $GITHUB_SERVER_URL/$GITHUB_REPOSITORY
+          git checkout -b gh-pages
+          gh auth setup-git
+          git push -f origin gh-pages
+        fi
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
