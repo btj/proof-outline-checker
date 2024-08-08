@@ -670,17 +670,29 @@ class AssignmentExpression extends Expression {
       this.push(new OperandBinding(this, 'void'));
       return;
     }
-
     let bindingThunk = await this.lhs.evaluateBinding(env);
-    if (this.op != '=')
-      this.push(bindingThunk(peek).value);
-    await this.rhs.evaluate(env);
-    await this.breakpoint();
-    let [rhs] = pop(1);
-    let [lhsValue] = this.op == '=' ? [undefined] : pop(1);
-    let lhs = bindingThunk(pop);
-    let result = this.evaluateOperator(lhsValue, rhs);
-    this.push(lhs.setValue(result));
+    if (this.lhs instanceof SliceExpression) {
+      await this.rhs.evaluate(env);
+      await this.breakpoint();
+      let [rhs] = pop(1);
+      let [target, start, end] = bindingThunk(pop);
+      if (!(target instanceof ListObject))
+        this.executionError(target + " is geen lijst");
+      if (!(rhs instanceof ListObject))
+        this.executionError(rhs + " is geen lijst");
+      target.with_slice(start, end, rhs);
+      this.push(target);
+    } else {
+      if (this.op != '=')
+        this.push(bindingThunk(peek).value);
+      await this.rhs.evaluate(env);
+      await this.breakpoint();
+      let [rhs] = pop(1);
+      let [lhsValue] = this.op == '=' ? [undefined] : pop(1);
+      let lhs = bindingThunk(pop);
+      let result = this.evaluateOperator(lhsValue, rhs);
+      this.push(lhs.setValue(result));
+    }
   }
 }
 
@@ -927,17 +939,17 @@ class ListObject extends JavaObject {
   }
   remove(item: Value) {
     let firstIndexOfElement = this.getElements().findIndex(e => e == item);
-    if(firstIndexOfElement != -1)
+    if (firstIndexOfElement != -1)
       return this.pop(firstIndexOfElement);
     else {
       throw new Error("Element is not in list.");
     }
   }
   pop(index: number) {
-    if(index >= this.length)
+    if (index >= this.length)
       throw new Error("Index out of range for pop method.");
     const absIndex = index >= 0 ? index : index + this.length;
-    if(absIndex < 0)
+    if (absIndex < 0)
       throw new Error("Index out of range for pop method.");
     let fields: {[index: string]: FieldBinding} = {};
     for (let i = 0; i < absIndex; i++)
@@ -954,9 +966,9 @@ class ListObject extends JavaObject {
   insert(index: number, item: Value) {
     const absIndex = index >= 0 ? index : index + this.length;
     let resultIndex = absIndex;
-    if(absIndex < 0)
+    if (absIndex < 0)
       resultIndex = 0;
-    else if(absIndex > this.length)
+    else if (absIndex > this.length)
       resultIndex = this.length;
     for (let i = this.length; i != resultIndex; i--)
       this.fields[i] = this.fields[i-1];
@@ -980,6 +992,33 @@ class ListObject extends JavaObject {
     if (typeof document !== 'undefined')
       this.domNode = updateListHeapObjectDOMNode(this);
     this.length = newLength;
+    return this;
+  }
+  with_slice(start: number, end: number, elements: ListObject) {
+    const absStart = start >= 0 ? start : start + this.length;
+    let resultStartIndex = absStart;
+    if (absStart < 0)
+      resultStartIndex = 0;
+    else if (absStart > this.length)
+      resultStartIndex = this.length;
+    const absEnd = end >= 0 ? end : end + this.length;
+    let resultEndIndex = absEnd;
+    if (absEnd < 0)
+      resultEndIndex = 0;
+    else if (absEnd > this.length)
+      resultEndIndex = this.length;
+    resultEndIndex = resultEndIndex < resultStartIndex ? resultStartIndex : resultEndIndex;
+    let fields: {[index: string]: FieldBinding} = {};
+    for (let i = 0; i < resultStartIndex; i++)
+      fields[i] = new FieldBinding(this.fields[i].value);
+    for (let i = 0; i < elements.length; i++)
+      fields[resultStartIndex+i] = new FieldBinding(elements.fields[i].value);
+    for (let i = 0; i < (this.length-resultEndIndex); i++)
+      fields[resultStartIndex+elements.length+i] = new FieldBinding(this.fields[resultEndIndex+i].value);
+    this.fields = fields;
+    if (typeof document !== 'undefined')
+      this.domNode = updateListHeapObjectDOMNode(this);
+    this.length = resultStartIndex+elements.length+(this.length-resultEndIndex);
     return this;
   }
   plus(other: ListObject) {
@@ -1328,6 +1367,17 @@ class SliceExpression extends Expression {
     this.startIndex.checkAgainst(env, intType);
     this.endIndex.checkAgainst(env, intType);
     return targetType;
+  }
+  async evaluateBinding(env: Scope) {
+    await this.target.evaluate(env);
+    await this.startIndex.evaluate(env);
+    await this.endIndex.evaluate(env);
+    return (pop?: (nbOperands: number) => Value[]) => {
+      let [target, startIndex, endIndex] = pop!(3);
+      if (!(target instanceof ListObject))
+        this.executionError(target + " is geen lijst");
+      return [target, startIndex, endIndex];
+    };
   }
 
   async evaluate(env: Scope) {
@@ -2447,7 +2497,7 @@ function parseProofOutline(stmts: Statement[], i: number, precededByAssert: bool
       return stmt.executionError(`Opdracht moet worden voorafgegaan door een assert statement`);
     if (preconditionHasMayAlias(previousStatement.condition, removeTargetExpressionName, stmt.mayAliasRelation!))
       return stmt.expr.executionError(`Deze opdracht die het list-object ${removeTargetExpressionName} muteert wordt met deze preconditie niet ondersteund door Bewijssilhouettencontroleur want de preconditie vermeldt een variabele die mogelijks wijst naar hetzelfde object als ${removeTargetExpressionName}`);
-    let args = [stmt.expr.target, stmt.expr.item];
+    let args = [removeTargetExpression, removeItemExpression];
     const parseType = (t: Type) => {
       return parseProofOutlineType(t, () => {
         return stmt.executionError("Oproepen van functies met een parameter van type '" + t.toString() + "' worden nog niet ondersteund in bewijssilhouetten");
@@ -2462,6 +2512,35 @@ function parseProofOutline(stmts: Statement[], i: number, precededByAssert: bool
       Const(stmt.expr.loc, mkConst("remove", constType))
     );
     return Seq(Assign(stmt.loc, proofOutlineVariableOfTarget, result), parseProofOutline(stmts, i + 1, false));
+  } else if (stmt instanceof ExpressionStatement && stmt.expr instanceof AssignmentExpression && stmt.expr.op == '=' && stmt.expr.lhs instanceof SliceExpression && stmt.expr.lhs.target instanceof VariableExpression) {
+    const L1 = stmt.expr.lhs.target;
+    const proofOutlineVariableOfL1Target = L1.getProofOutlineVariable(() => {
+      return stmt.executionError(`Toekenningen aan variabelen van het type ${L1.type} worden nog niet ondersteund.`);
+    });
+    const previousStatement = stmts[i-1];
+    const L1Name = L1.name;
+    if (!(previousStatement instanceof AssertStatement))
+      return stmt.executionError(`Opdracht moet worden voorafgegaan door een assert statement`);
+    if (preconditionHasMayAlias(previousStatement.condition, L1Name, stmt.mayAliasRelation!))
+      return stmt.expr.executionError(`Deze opdracht die het list-object ${L1Name} muteert wordt met deze preconditie niet ondersteund door Bewijssilhouettencontroleur want de preconditie vermeldt een variabele die mogelijks wijst naar hetzelfde object als ${L1Name}`);
+    const L2 = stmt.expr.rhs;
+    const startIndex = stmt.expr.lhs.startIndex;
+    const endIndex = stmt.expr.lhs.endIndex;
+    const args = [L1, startIndex, endIndex, L2];
+    const parseType = (t: Type) => {
+      return parseProofOutlineType(t, () => {
+        return stmt.executionError("Oproepen van functies met een parameter van type '" + t.toString() + "' worden nog niet ondersteund in bewijssilhouetten");
+      });
+    };
+    const constType = args.reduceRight(
+      (acc, p) => TFun(parseType(p.type!), acc), 
+      parseType(stmt.expr.lhs.target.type!)
+    );
+    let result = args.reduce( 
+      (acc, arg) => App(stmt.expr.loc, acc, parseProofOutlineExpression(arg)),
+      Const(stmt.expr.loc, mkConst("with_slice", constType))
+    );
+    return Seq(Assign(stmt.loc, proofOutlineVariableOfL1Target, result), parseProofOutline(stmts, i + 1, false));
   } else if (stmt instanceof ExpressionStatement && stmt.expr instanceof AssignmentExpression && stmt.expr.op == '=' && stmt.expr.lhs instanceof SubscriptExpression) {
     const rhs = stmt.expr.rhs;
     const subscriptExpression = stmt.expr.lhs;
@@ -5362,7 +5441,7 @@ assert fibonacci(6) == 8`,
 expression: `fibonacci(7)`
 },
 ]
-const aliasViolationExampleSameVariableAssigment: TestCase = {
+const aliasViolationExampleSameVariableAssignment: TestCase = {
   declarations:
 `# Wet Uitgesteld: b
 def method():
@@ -5908,6 +5987,50 @@ def method(x):
   locStart: 636,
   locEnd: 637
 };
+const aliasViolationExampleSliceAssignment: TestCase = {
+  declarations:
+`def max(x, y):
+  if x < y:
+    return y
+  else:
+    return x
+def norm(I, L):
+  if 0 <= I:
+    return I
+  else:
+    return max(0, len(L) + I)
+def with_slice(L1, I1, I2, L2):
+  return L1[:I1] + L2 + L1[max(norm(I1, L1), norm(I2, L1)):]
+#Wet Uitgesteld : b
+def method(x):
+  assert [1,2] == [1,2] #PRECONDITIE
+  a = [1,2]
+  assert a == [1,2]
+  assert  [2,2] == [2,2] # Uitgesteld
+  b = [2,2]
+  assert  b == [2,2]
+  assert True
+  if x:
+    assert True and x
+    assert 5 == 5 # Uitgesteld
+    c = 5
+    assert c == 5
+    assert True
+  else:
+    assert True and not x
+    assert b == b # Uitgesteld
+    a = b
+    assert a == b
+    assert True
+  assert True 
+  assert with_slice(a, 2, -1, [5]) == [1,2,5,4] and len(b) == 2 # Uitgesteld 
+  a[2:-1] = [5]
+  assert a == [1,2,5,4] and len(b) == 2 #POSTCONDITIE
+`,
+  errorMessage: `Deze opdracht die het list-object a muteert wordt met deze preconditie niet ondersteund door Bewijssilhouettencontroleur want de preconditie vermeldt een variabele die mogelijks wijst naar hetzelfde object als a`,
+  locStart: 740,
+  locEnd: 741
+};
 const listMutationViolationExampleAppendTakesOnlyOneArgument: TestCase = {
   declarations:
 `def method():
@@ -6210,13 +6333,14 @@ async function testAliasingViolationExamples() {
   await testAliasingViolationTestCase(aliasViolationExampleViolationInLastLoopOfLus);
   await testAliasingViolationTestCase(aliasViolationExampleDoubleWhileLusMultipleLoopings);
   await testAliasingViolationTestCase(aliasViolationExampleSingleWhileLusMultipleLoopings);
-  await testAliasingViolationTestCase(aliasViolationExampleSameVariableAssigment);
+  await testAliasingViolationTestCase(aliasViolationExampleSameVariableAssignment);
   await testAliasingViolationTestCase(aliasViolationExampleAppendMethod);
   await testAliasingViolationTestCase(aliasViolationExampleClearMethod);
   await testAliasingViolationTestCase(aliasViolationExampleExtendMethod);
   await testAliasingViolationTestCase(aliasViolationExampleInsertMethod);
   await testAliasingViolationTestCase(aliasViolationExamplePopMethod);
   await testAliasingViolationTestCase(aliasViolationExampleRemoveMethod);
+  await testAliasingViolationTestCase(aliasViolationExampleSliceAssignment);
   console.log("All alias violation error tests passed!");
 }
 
@@ -6973,6 +7097,74 @@ def removeCall():
   return K
 `,
   statements: `assert removeCall() == [2,1]`,
+  expression: ``
+}, {
+  title: 'Simple Slice assignments inserting an element',
+  declarations: 
+`def method():
+  xs = [10, 20, 30]
+  xs[2:1] = [25]
+  xs[-2:1] = [23]
+  return xs
+`,
+  statements: `assert method() == [10, 20, 23, 25, 30]`,
+  expression: ``
+}, {
+  title: 'Simple Slice assignment replacing the elements, with silent indexes',
+  declarations: 
+`def method():
+  xs = [1, 2, 3, 4, 5]
+  xs[:] = [4, 2]
+  return xs
+`,
+  statements: `assert method() == [4, 2]`,
+  expression: ``
+}, {
+  title: 'Simple Slice assignment inserting elements with silent start index',
+  declarations: 
+`def method():
+  xs = [1, 2, 3, 4, 5]
+  xs[:0] = [-1, 0] 
+  return xs
+`,
+  statements: `assert method() == [-1, 0, 1, 2, 3, 4, 5]`,
+  expression: ``
+}, {
+  title: 'Simple Slice assignment replacing one element',
+  declarations: 
+`def method():
+  a = [1,2,3,4]
+  a[2:-1] = [5]
+  return a
+`,
+  statements: `assert method() == [1,2,5,4]`,
+  expression: ``
+}, {
+  title: 'Proof outline with simple Slice assignment replacing one element',
+  declarations: 
+`def max(x, y):
+  if x < y:
+    return y
+  else:
+    return x
+def norm(I, L):
+  if 0 <= I:
+    return I
+  else:
+    return max(0, len(L) + I)
+def with_slice(L1, I1, I2, L2):
+  return L1[:I1] + L2 + L1[max(norm(I1, L1), norm(I2, L1)):]
+#Wet Uitgesteld : b
+def method():
+  assert [1,2,3,4] == [1,2,3,4] #PRECONDITIE
+  a = [1,2,3,4]
+  assert a == [1,2,3,4]
+  assert with_slice(a, 2, -1, [5]) == [1,2,5,4] # Uitgesteld 
+  a[2:-1] = [5]
+  assert a == [1,2,5,4] #POSTCONDITIE
+  return a 
+`,
+  statements: `assert method() == [1,2,5,4]`,
   expression: ``
 }
 ];
